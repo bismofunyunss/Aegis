@@ -1,0 +1,12 @@
+﻿<UserControl x:Class="Aegis.App.Controls.RainbowLabel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="30" Width="250">
+    <TextBlock x:Name="WelcomeLabel"
+               FontWeight="Bold"
+               FontSize="16"
+               Text="Welcome, "
+               HorizontalAlignment="Left"
+               Margin="5,0,0,10" 
+               VerticalAlignment="Bottom"/>
+</UserControl>

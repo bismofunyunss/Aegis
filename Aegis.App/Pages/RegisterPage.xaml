@@ -1,0 +1,157 @@
+﻿<Page x:Class="Aegis.App.Pages.RegisterPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="clr-namespace:Aegis.App.Controls"
+      Width="450"
+      Height="500"
+      Background="{x:Null}">
+
+    <Grid>
+        <!-- Centered container panel -->
+        <Border Width="430"
+                Height="480"
+                Padding="20"
+                CornerRadius="12"
+                BorderBrush="#444"
+                BorderThickness="2"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="Transparent">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="10" ShadowDepth="2" Opacity="0.4"/>
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <!-- Title -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Username Label -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Username TextBox -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Password Label -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- PasswordBox -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Password Entropy Label -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Password Strength Bar -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Confirm Password Label -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Confirm PasswordBox -->
+                    <RowDefinition Height="*"/>
+                    <!-- Spacer -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Register Button -->
+                </Grid.RowDefinitions>
+
+                <!-- Title -->
+                <TextBlock Grid.Row="0"
+                           Text="Create Your Account"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,22"/>
+
+                <!-- Username Label -->
+                <TextBlock Grid.Row="1"
+                           Text="Username"
+                           Foreground="White"
+                           Margin="0,0,0,8"/>
+
+                <!-- Username TextBox -->
+                <TextBox Grid.Row="2"
+                         x:Name="UsernameBox"
+                         Style="{StaticResource AegisTextBox}"
+                         Height="34"/>
+
+                <!-- Password Label -->
+                <TextBlock Grid.Row="3"
+                           Text="Password"
+                           Foreground="#888"
+                           Margin="0,12,0,8"/>
+
+                <!-- PasswordBox -->
+                <PasswordBox Grid.Row="4"
+                             x:Name="PasswordBox"
+                             Height="34"
+                             Background="#2A2A2A"
+                             Foreground="#AAA"
+                             BorderBrush="#444"
+                             BorderThickness="1"
+                             PasswordChanged="PasswordBox_PasswordChanged"/>
+
+                <!-- Password Entropy Label -->
+                <TextBlock Grid.Row="5"
+                           x:Name="PasswordEntropyLabel"
+                           Foreground="#CCC"
+                           FontSize="12"
+                           Margin="0,6,0,2"
+                           HorizontalAlignment="Left"
+                           Text="Entropy: 0 bits"/>
+
+                <!-- Password Strength Bar -->
+                <ProgressBar Grid.Row="6"
+                             x:Name="PasswordStrengthBar"
+                             Height="10"
+                             Foreground="#00FF00"
+                             Background="#333"
+                             Margin="0,0,0,12"
+                             Minimum="0"
+                             Maximum="1000"/>
+
+                <!-- Confirm Password Label -->
+                <TextBlock Grid.Row="7"
+                           Text="Confirm Password"
+                           Foreground="#888"
+                           Margin="0,12,0,8"/>
+
+                <!-- Confirm PasswordBox -->
+                <PasswordBox Grid.Row="8"
+                             x:Name="ConfirmPasswordBox"
+                             Height="34"
+                             Background="#2A2A2A"
+                             Foreground="#AAA"
+                             BorderBrush="#444"
+                             BorderThickness="1"/>
+
+                <!-- Spacer -->
+                <Grid Grid.Row="9"/>
+
+                <!-- Register Button -->
+                <Button Grid.Row="10"
+                        x:Name="RegisterButton"
+                        Content="Register"
+                        Style="{StaticResource AegisButton}"
+                        Width="386"
+                        Height="50"
+                        HorizontalAlignment="Center"
+                        Margin="0,16,0,0"
+                        Click="RegisterButton_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
