@@ -3,22 +3,22 @@ using Aegis.App.Global;
 using Aegis.App.Helpers;
 using Aegis.App.IO;
 using Aegis.App.Vault.VaultEntry;
+using Org.BouncyCastle.Crypto.Engines;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using Windows.Devices.Geolocation;
-using Org.BouncyCastle.Crypto.Engines;
 using static Aegis.App.Pages.VaultPage;
 using static Aegis.App.ParallelCtrEncryptor;
 using static Aegis.App.ParallelCtrEncryptor.SecureParallelEncryptor;
-using static Aegis.App.ParallelCtrEncryptor.SecureParallelEncryptor.ParallelCtr;
 
 namespace Aegis.App.Vault.Services
 {
@@ -39,7 +39,7 @@ namespace Aegis.App.Vault.Services
                 return;
             }
 
-            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Instance.Username!), VaultFileName);
+            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Session.GetUsername()), VaultFileName);
 
             // Serialize entries
             using var plaintext = new MemoryStream();
@@ -47,10 +47,18 @@ namespace Aegis.App.Vault.Services
                 new JsonSerializerOptions { WriteIndented = false });
             plaintext.Position = 0;
 
+            var crypto = Session.Session.GetCryptoSession();
+            if (crypto == null || !crypto.IsMasterKeyInitialized)
+                throw new SecurityException("Crypto session not initialized.");
+
             // Generate salts and keys
-            var fileKeySalt = RandomNumberGenerator.GetBytes(FileKeySaltSize);
-            var fileKey = Session.Instance.MasterKey.DeriveKey(fileKeySalt, "Vault-File-Key"u8.ToArray(), 64);
-            var layerSalts = CryptoMethods.SaltGenerator.CreateSalts(LayerSaltSize);
+            var fileKeySalt = RandomNumberGenerator.GetBytes(128);
+            using var fileKey = new FileKey(
+                crypto.MasterKey,
+                fileKeySalt,
+                "Vault-File-Key"u8.ToArray(),
+                64);
+            var layerSalts = CryptoMethods.SaltGenerator.CreateSalts(128);
             var keys = KeyDerivation.DeriveKeys(fileKey, layerSalts);
 
             try
@@ -64,7 +72,7 @@ namespace Aegis.App.Vault.Services
             }
             finally
             {
-                MemoryHandling.Clear(fileKey);
+                fileKey.Dispose();
                 foreach (var salt in layerSalts) MemoryHandling.Clear(salt);
                 keys?.Dispose();
             }
@@ -72,7 +80,7 @@ namespace Aegis.App.Vault.Services
 
         public static async Task LoadVaultAsync(IProgress<double>? progress = null)
         {
-            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Instance.Username!), VaultFileName);
+            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Session.GetUsername()!), VaultFileName);
 
             VaultState.Items.Clear();
             VaultState.IsDirty = false;
@@ -169,9 +177,17 @@ namespace Aegis.App.Vault.Services
             if (magic != VaultMagic || version != VaultVersion)
                 throw new CryptographicException("Invalid vault format.");
 
+            var crypto = Session.Session.GetCryptoSession();
+            if (crypto == null || !crypto.IsMasterKeyInitialized)
+                throw new SecurityException("Crypto session not initialized.");
+
             // File key salt
             byte[] fileKeySalt = await HelperMethods.ReadExactAsync(encryptedVault, FileKeySaltSize);
-            var fileKey = Session.Instance.Crypto.MasterKey.DeriveKey(fileKeySalt, "Vault-File-Key"u8.ToArray(), 64);
+            using var fileKey = new FileKey(
+                crypto.MasterKey,
+                fileKeySalt,
+                "Vault-File-Key"u8.ToArray(),
+                64);
 
             // Layer salts
             var layerSalts = new byte[NumLayerSalts][];

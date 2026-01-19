@@ -1,0 +1,111 @@
+﻿<Window x:Class="Aegis.App.Pages.EnterRecoveryKey"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        mc:Ignorable="d"
+        Title="Account Recovery"
+        Height="450"
+        Width="460"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#121212">
+
+    <Grid>
+        <!-- Outer container -->
+        <Border Width="420"
+                Padding="20"
+                CornerRadius="12"
+                BorderBrush="#444"
+                BorderThickness="2"
+                Background="Transparent"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+
+            <Border.Effect>
+                <DropShadowEffect Color="#000000"
+                                  BlurRadius="12"
+                                  ShadowDepth="2"
+                                  Opacity="0.45"/>
+            </Border.Effect>
+
+            <StackPanel>
+
+                <!-- Title -->
+                <TextBlock Text="Account Recovery"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,12"/>
+
+                <!-- Warning / explanation -->
+                <TextBlock TextWrapping="Wrap"
+                           Foreground="#BBBBBB"
+                           FontSize="13"
+                           Margin="0,0,0,16">
+                    Enter your recovery key to regain access to your account.
+                    This key was shown only once during registration.
+                </TextBlock>
+
+                <!-- Recovery key label -->
+                <TextBlock Text="Recovery Key"
+                           Foreground="White"
+                           Margin="0,0,0,6"/>
+
+                <!-- Recovery key input -->
+                <TextBox x:Name="RecoveryKeyBox"
+                         Height="90"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         Background="#2A2A2A"
+                         Foreground="#E0E0E0"
+                         BorderBrush="#444"
+                         BorderThickness="1"
+                         FontFamily="Consolas"
+                         FontSize="13"
+                         Padding="8"/>
+
+                <!-- Help text -->
+                <TextBlock Text="Paste the full recovery key exactly as provided."
+                           Foreground="#888"
+                           FontSize="12"
+                           Margin="0,6,0,18"/>
+
+                <!-- Buttons -->
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Margin="0,0,0,6">
+
+                    <Button Content="Cancel"
+                            Width="120"
+                            Height="40"
+                            Margin="0,0,12,0"
+                            Style="{StaticResource AegisButton}"
+                            Click="Cancel_Click"/>
+
+                    <Button Content="Recover Account"
+                            Width="180"
+                            Height="40"
+                            Style="{StaticResource AegisButton}"
+                            Click="Recover_Click"/>
+                </StackPanel>
+
+                <!-- Use TOTP instead -->
+                <Button Content="Use TOTP Instead"
+                        Width="200"
+                        Height="30"
+                        HorizontalAlignment="Center"
+                        Background="Transparent"
+                        Foreground="#00BFFF"
+                        BorderBrush="Transparent"
+                        FontSize="13"
+                        Click="UseTotp_Click"
+                        Cursor="Hand"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
+
+

@@ -12,6 +12,7 @@ using Sodium;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Security;
 using System.Security.Cryptography;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -290,7 +291,7 @@ public static class ParallelCtrEncryptor
                 header = ms.ToArray();
             }
 
-            using var Keys = Session.Instance.Crypto!.Keys;
+
             {
                 using (var hmac = new HMACSHA256(keys.AesHmacKey))
                     headerMac = hmac.ComputeHash(header);
@@ -342,7 +343,7 @@ public static class ParallelCtrEncryptor
                     byte[] threeFishTag = new byte[64];
                     await using (var tIn = File.OpenRead(xchachaPath))
                     await using (var tOut = File.Create(threefishPath))
-                       threeFishTag = await ParallelCtr.EncryptParallelAsync(
+                        threeFishTag = await ParallelCtr.EncryptParallelAsync(
                             tIn, tOut,
                             keys.ThreefishKey, keys.ThreefishHmacKey,
                             () => new ThreefishEngine(1024),
@@ -358,7 +359,7 @@ public static class ParallelCtrEncryptor
                     byte[] serpentTag = new byte[64];
                     await using (var sIn = File.OpenRead(threefishPath))
                     await using (var sOut = File.Create(serpentPath))
-                       serpentTag = await ParallelCtr.EncryptParallelAsync(
+                        serpentTag = await ParallelCtr.EncryptParallelAsync(
                             sIn, sOut,
                             keys.SerpentKey, keys.SerpentHmacKey,
                             () => new SerpentEngine(),
@@ -374,7 +375,7 @@ public static class ParallelCtrEncryptor
                     byte[] aesTag = new byte[64];
                     await using (var aIn = File.OpenRead(serpentPath))
                     await using (var aOut = File.Create(aesPath))
-                      aesTag = await ParallelCtr.EncryptParallelAsync(
+                        aesTag = await ParallelCtr.EncryptParallelAsync(
                             aIn, aOut,
                             keys.AesKey, keys.AesHmacKey,
                             () => new AesEngine(),
@@ -417,12 +418,12 @@ public static class ParallelCtrEncryptor
             }
         }
 
-        public static async Task EncryptV3(
-          MemoryStream inputStream,
-          MemoryStream outputStream,
-          DerivedKeys keys,
-          IProgress<double>? progress = null,
-          int chunkSize = 64 * 1024)
+        public static async Task DecryptV3(
+            Stream inputStream,
+            Stream outputStream,
+            DerivedKeys keys,
+            IProgress<double>? progress = null,
+            int chunkSize = 64 * 1024)
         {
             // =======================
             // Generate nonces / IVs
@@ -449,120 +450,123 @@ public static class ParallelCtrEncryptor
                 header = ms.ToArray();
             }
 
-            using var Keys = Session.Instance.Crypto!.Keys;
+
+            var crypto = Session.Session.GetCryptoSession();
+            if (crypto == null || !crypto.IsMasterKeyInitialized)
+                throw new SecurityException("Crypto session not initialized.");
+
+            using (var hmac = new HMACSHA256(keys.AesHmacKey))
+                headerMac = hmac.ComputeHash(header);
+
+            // =======================
+            // Write header
+            // =======================
+            await outputStream.WriteAsync(BitConverter.GetBytes(header.Length));
+            await outputStream.WriteAsync(header);
+            await outputStream.WriteAsync(headerMac);
+
+            // =======================
+            // Temp files
+            // =======================
+            string shuffledPath = Path.GetTempFileName();
+            string xchachaPath = Path.GetTempFileName();
+            string threefishPath = Path.GetTempFileName();
+            string serpentPath = Path.GetTempFileName();
+            string aesPath = Path.GetTempFileName();
+
+            try
             {
-                using (var hmac = new HMACSHA256(keys.AesHmacKey))
-                    headerMac = hmac.ComputeHash(header);
+                // =======================
+                // 1. Shuffle (0–20%)
+                // =======================
+                var shuffleProgress = CreateSegmentedProgress(
+                    inputStream.Length, 0, 20, progress);
+
+                await using (var shuffledOut = File.Create(shuffledPath))
+                    await ParallelCtr.ShuffleLayer.ShuffleStreamAsync(
+                        inputStream, shuffledOut, keys.ShuffleKey);
 
                 // =======================
-                // Write header
+                // 2. XChaCha20 (20–40%)
                 // =======================
-                await outputStream.WriteAsync(BitConverter.GetBytes(header.Length));
-                await outputStream.WriteAsync(header);
-                await outputStream.WriteAsync(headerMac);
+                var xchachaProgress = CreateSegmentedProgress(
+                    new FileInfo(shuffledPath).Length, 20, 40, progress);
+
+                await using (var xIn = File.OpenRead(shuffledPath))
+                await using (var xOut = File.Create(xchachaPath))
+                    await ParallelCtr.EncryptXChaCha20Poly1305ParallelRawAsync(
+                        xIn, xOut, keys.XChaChaKey, xchachaNonce, xchachaProgress);
 
                 // =======================
-                // Temp files
+                // 3. Threefish CTR + HMAC (40–60%)
                 // =======================
-                string shuffledPath = Path.GetTempFileName();
-                string xchachaPath = Path.GetTempFileName();
-                string threefishPath = Path.GetTempFileName();
-                string serpentPath = Path.GetTempFileName();
-                string aesPath = Path.GetTempFileName();
+                var threefishProgress = CreateSegmentedProgress(
+                    new FileInfo(xchachaPath).Length, 40, 60, progress);
 
-                try
-                {
-                    // =======================
-                    // 1. Shuffle (0–20%)
-                    // =======================
-                    var shuffleProgress = CreateSegmentedProgress(
-                        inputStream.Length, 0, 20, progress);
+                await using (var tIn = File.OpenRead(xchachaPath))
+                await using (var tOut = File.Create(threefishPath))
+                    await ParallelCtr.EncryptParallelAsync(
+                        tIn, tOut,
+                        keys.ThreefishKey, keys.ThreefishHmacKey,
+                        () => new ThreefishEngine(1024),
+                        threefishIv,
+                        threefishProgress,
+                        chunkSize);
 
-                    await using (var shuffledOut = File.Create(shuffledPath))
-                        await ParallelCtr.ShuffleLayer.ShuffleStreamAsync(
-                            inputStream, shuffledOut, keys.ShuffleKey);
+                // =======================
+                // 4. Serpent CTR + HMAC (60–80%)
+                // =======================
+                var serpentProgress = CreateSegmentedProgress(
+                    new FileInfo(threefishPath).Length, 60, 80, progress);
 
-                    // =======================
-                    // 2. XChaCha20 (20–40%)
-                    // =======================
-                    var xchachaProgress = CreateSegmentedProgress(
-                        new FileInfo(shuffledPath).Length, 20, 40, progress);
+                await using (var sIn = File.OpenRead(threefishPath))
+                await using (var sOut = File.Create(serpentPath))
+                    await ParallelCtr.EncryptParallelAsync(
+                        sIn, sOut,
+                        keys.SerpentKey, keys.SerpentHmacKey,
+                        () => new SerpentEngine(),
+                        serpentIv,
+                        serpentProgress,
+                        chunkSize);
 
-                    await using (var xIn = File.OpenRead(shuffledPath))
-                    await using (var xOut = File.Create(xchachaPath))
-                        await ParallelCtr.EncryptXChaCha20Poly1305ParallelRawAsync(
-                            xIn, xOut, keys.XChaChaKey, xchachaNonce, xchachaProgress);
+                // =======================
+                // 5. AES CTR + HMAC (80–95%)
+                // =======================
+                var aesProgress = CreateSegmentedProgress(
+                    new FileInfo(serpentPath).Length, 80, 95, progress);
 
-                    // =======================
-                    // 3. Threefish CTR + HMAC (40–60%)
-                    // =======================
-                    var threefishProgress = CreateSegmentedProgress(
-                        new FileInfo(xchachaPath).Length, 40, 60, progress);
+                await using (var aIn = File.OpenRead(serpentPath))
+                await using (var aOut = File.Create(aesPath))
+                    await ParallelCtr.EncryptParallelAsync(
+                        aIn, aOut,
+                        keys.AesKey, keys.AesHmacKey,
+                        () => new AesEngine(),
+                        aesIv,
+                        aesProgress,
+                        chunkSize);
 
-                    await using (var tIn = File.OpenRead(xchachaPath))
-                    await using (var tOut = File.Create(threefishPath))
-                        await ParallelCtr.EncryptParallelAsync(
-                            tIn, tOut,
-                            keys.ThreefishKey, keys.ThreefishHmacKey,
-                            () => new ThreefishEngine(1024),
-                            threefishIv,
-                            threefishProgress,
-                            chunkSize);
+                // =======================
+                // 6. Final payload
+                // =======================
+                await using (var finalCipher = File.OpenRead(aesPath))
+                    await finalCipher.CopyToAsync(outputStream);
 
-                    // =======================
-                    // 4. Serpent CTR + HMAC (60–80%)
-                    // =======================
-                    var serpentProgress = CreateSegmentedProgress(
-                        new FileInfo(threefishPath).Length, 60, 80, progress);
+                progress?.Report(100);
+            }
+            finally
+            {
+                await SecureFileEraser.SecurelyEraseFileAsync(shuffledPath, SecureFileEraser.IsSSD(shuffledPath));
+                await SecureFileEraser.SecurelyEraseFileAsync(xchachaPath, SecureFileEraser.IsSSD(xchachaPath));
+                await SecureFileEraser.SecurelyEraseFileAsync(threefishPath, SecureFileEraser.IsSSD(threefishPath));
+                await SecureFileEraser.SecurelyEraseFileAsync(serpentPath, SecureFileEraser.IsSSD(serpentPath));
+                await SecureFileEraser.SecurelyEraseFileAsync(aesPath, SecureFileEraser.IsSSD(aesPath));
 
-                    await using (var sIn = File.OpenRead(threefishPath))
-                    await using (var sOut = File.Create(serpentPath))
-                        await ParallelCtr.EncryptParallelAsync(
-                            sIn, sOut,
-                            keys.SerpentKey, keys.SerpentHmacKey,
-                            () => new SerpentEngine(),
-                            serpentIv,
-                            serpentProgress,
-                            chunkSize);
-
-                    // =======================
-                    // 5. AES CTR + HMAC (80–95%)
-                    // =======================
-                    var aesProgress = CreateSegmentedProgress(
-                        new FileInfo(serpentPath).Length, 80, 95, progress);
-
-                    await using (var aIn = File.OpenRead(serpentPath))
-                    await using (var aOut = File.Create(aesPath))
-                        await ParallelCtr.EncryptParallelAsync(
-                            aIn, aOut,
-                            keys.AesKey, keys.AesHmacKey,
-                            () => new AesEngine(),
-                            aesIv,
-                            aesProgress,
-                            chunkSize);
-
-                    // =======================
-                    // 6. Final payload
-                    // =======================
-                    await using (var finalCipher = File.OpenRead(aesPath))
-                        await finalCipher.CopyToAsync(outputStream);
-
-                    progress?.Report(100);
-                }
-                finally
-                {
-                    await SecureFileEraser.SecurelyEraseFileAsync(shuffledPath, SecureFileEraser.IsSSD(shuffledPath));
-                    await SecureFileEraser.SecurelyEraseFileAsync(xchachaPath, SecureFileEraser.IsSSD(xchachaPath));
-                    await SecureFileEraser.SecurelyEraseFileAsync(threefishPath, SecureFileEraser.IsSSD(threefishPath));
-                    await SecureFileEraser.SecurelyEraseFileAsync(serpentPath, SecureFileEraser.IsSSD(serpentPath));
-                    await SecureFileEraser.SecurelyEraseFileAsync(aesPath, SecureFileEraser.IsSSD(aesPath));
-
-                    MemoryHandling.Clear(xchachaNonce, threefishIv, serpentIv, aesIv);
-                }
+                MemoryHandling.Clear(xchachaNonce, threefishIv, serpentIv, aesIv);
             }
         }
+    }
 
-        public static async Task DecryptV3(
+    public static async Task DecryptV3(
             Stream inputStream,
             Stream outputStream,
             DerivedKeys Keys,
@@ -1465,4 +1469,3 @@ public static class ParallelCtrEncryptor
                 }
             }
         }
-    }

@@ -82,6 +82,23 @@ internal static class MemoryHandling
     }
 }
 
+public sealed class SecureRecoveryKey : IDisposable
+{
+    private byte[] _key;
+    public SecureRecoveryKey(byte[] key) => _key = key ?? throw new ArgumentNullException(nameof(key));
+    public byte[] Value => _key;
+
+    public void Dispose()
+    {
+        if (_key != null)
+        {
+            CryptographicOperations.ZeroMemory(_key);
+            _key = null!;
+        }
+    }
+}
+
+
 /// <summary>
 ///     Securely stores a master key in unmanaged memory with page locking.
 ///     Automatically zeros memory on dispose.
@@ -89,65 +106,49 @@ internal static class MemoryHandling
 public sealed class SecureMasterKey : IDisposable
 {
     private IntPtr _ptr = IntPtr.Zero;
-    private int _length = 0;
-    private bool _disposed = false;
+    private int _length;
+    private bool _disposed;
 
-    public bool IsInitialized => _ptr != IntPtr.Zero && _length > 0;
+    public int Length => _length;
 
     /// <summary>
-    /// Create a secure master key from a byte array.
-    /// The key is pinned in memory and pages are locked.
+    /// Indicates whether the master key is allocated and not disposed.
     /// </summary>
+    public bool IsInitialized => !_disposed && _ptr != IntPtr.Zero && _length > 0;
+
     public SecureMasterKey(byte[] key)
     {
         if (key == null || key.Length == 0)
-            throw new ArgumentException("Invalid master key.", nameof(key));
-
-        AntiDebug.AssertCleanEnvironment();
+            throw new ArgumentException(nameof(key));
 
         _length = key.Length;
         _ptr = Marshal.AllocHGlobal(_length);
+        Marshal.Copy(key, 0, _ptr, _length);
+        CryptographicOperations.ZeroMemory(key);
 
-        try
-        {
-            Marshal.Copy(key, 0, _ptr, _length);
-
-            if (!MemoryHandling.NativeMemory.VirtualLock(_ptr, (UIntPtr)_length))
-            {
-                int err = Marshal.GetLastWin32Error();
-                Marshal.FreeHGlobal(_ptr);
-                _ptr = IntPtr.Zero;
-                throw new CryptographicException($"VirtualLock failed (err={err}).");
-            }
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(key);
-        }
+        if (!MemoryHandling.NativeMemory.VirtualLock(_ptr, (UIntPtr)_length))
+            throw new CryptographicException("VirtualLock failed.");
     }
 
-    /// <summary>
-    /// Get a read-only span over the key bytes.
-    /// Safe: does not expose modifiable array.
-    /// </summary>
-    public ReadOnlySpan<byte> GetKeySpan()
+    public void CopyKeyTo(Span<byte> destination)
     {
         EnsureAlive();
-        AntiDebug.AssertCleanEnvironment();
+        if (destination.Length < _length)
+            throw new ArgumentException("Destination too small.");
         unsafe
         {
-            return new ReadOnlySpan<byte>((void*)_ptr, _length);
+            new ReadOnlySpan<byte>((void*)_ptr, _length).CopyTo(destination);
         }
     }
 
+    public unsafe ReadOnlySpan<byte> GetKeySpan() => new ReadOnlySpan<byte>((void*)_ptr, _length);
+
     /// <summary>
-    /// Derive a new key from the master key using HKDF.
+    /// Derives a new key from the master key using the provided HKDF parameters.
     /// </summary>
     public byte[] DeriveKey(ReadOnlySpan<byte> salt, ReadOnlySpan<byte> info, int length)
     {
         EnsureAlive();
-        AntiDebug.AssertCleanEnvironment();
-
         unsafe
         {
             var ikm = new ReadOnlySpan<byte>((void*)_ptr, _length);
@@ -164,35 +165,27 @@ public sealed class SecureMasterKey : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        AntiDebug.AssertCleanEnvironment();
+        _disposed = true;
 
-        // Zero memory first
-        if (_ptr != IntPtr.Zero)
+        var ptr = Interlocked.Exchange(ref _ptr, IntPtr.Zero);
+        if (ptr != IntPtr.Zero)
         {
             unsafe
             {
-                Span<byte> span = new Span<byte>((void*)_ptr, _length);
+                Span<byte> span = new Span<byte>((void*)ptr, _length);
                 CryptographicOperations.ZeroMemory(span);
             }
-
-            // Unlock pages
-            MemoryHandling.NativeMemory.VirtualUnlock(_ptr, (UIntPtr)_length);
-
-            // Free unmanaged memory
-            Marshal.FreeHGlobal(_ptr);
-            _ptr = IntPtr.Zero;
+            MemoryHandling.NativeMemory.VirtualUnlock(ptr, (UIntPtr)_length);
+            Marshal.FreeHGlobal(ptr);
             _length = 0;
         }
 
-        _disposed = true;
         GC.SuppressFinalize(this);
     }
 
-    ~SecureMasterKey()
-    {
-        Dispose();
-    }
+    ~SecureMasterKey() => Dispose();
 }
+
 
 
 internal static class AntiDebug

@@ -53,13 +53,33 @@
                                Margin="0,12,0,8"/>
                     <!-- PasswordBox -->
                     <PasswordBox x:Name="PasswordBox"
-                                 IsEnabled="False"
-                                 ToolTip="Must enable FIPS mode"
                                  Height="34"
                                  Background="#2A2A2A"
                                  Foreground="#AAA"
                                  BorderBrush="#444"
                                  BorderThickness="1"/>
+                    <!-- Forgot Password -->
+                    <Button x:Name="ForgotPasswordButton"
+                            Content="Forgot Password?"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="#7FAFFF"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalAlignment="Right"
+                            Cursor="Hand"
+                            Click="ForgotPasswordButton_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <TextBlock Text="{TemplateBinding Content}"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           TextDecorations="Underline"/>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+
+
                     <!-- Remember Me -->
                     <CheckBox x:Name="RememberMeCheckBox"
                               Content="Remember Me"

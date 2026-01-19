@@ -2,57 +2,92 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Threading.Tasks;
+using Aegis.App.Session;
 
 namespace Aegis.App.Crypto
 {
-    public static class KeyDerivation
+    internal static class KeyDerivation
     {
-        public static DerivedKeys DeriveKeys(byte[] fileKey, byte[][] salts)
+        private const int RequiredSaltCount = 8;
+
+        public static DerivedKeys DeriveKeys(FileKey fileKey, byte[][] salts)
         {
-            var xChaCha = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[0], "XChaCha20-Poly1305"u8.ToArray(), 32);
+            if (fileKey == null)
+                throw new ArgumentNullException(nameof(fileKey));
 
-            var threefish = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[1], "Threefish-1024"u8.ToArray(), 128);
+            if (salts == null || salts.Length != RequiredSaltCount)
+                throw new ArgumentException(
+                    $"Exactly {RequiredSaltCount} salts are required.",
+                    nameof(salts));
 
-            var serpent = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[2], "Serpent-256-Key"u8.ToArray(), 32);
+            byte[] xChaCha = null!;
+            byte[] threefish = null!;
+            byte[] serpent = null!;
+            byte[] aes = null!;
+            byte[] shuffle = null!;
+            byte[] threefishHmac = null!;
+            byte[] serpentHmac = null!;
+            byte[] aesHmac = null!;
 
-            var aes = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[3], "AES-256"u8.ToArray(), 32);
+            try
+            {
+                fileKey.WithKey(fileKeyBytes =>
+                {
+                    xChaCha = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[0], "XChaCha20-Poly1305"u8, 32);
 
-            var shuffle = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[4], "Shuffle-Layer"u8.ToArray(), 128);
+                    threefish = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[1], "Threefish-1024"u8, 128);
 
-            var threefishHmac = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[5], "Threefish-1024-HMAC"u8.ToArray(), 64);
+                    serpent = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[2], "Serpent-256-Key"u8, 32);
 
-            var serpentHmac = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[6], "Serpent-256-HMAC"u8.ToArray(), 64);
+                    aes = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[3], "AES-256"u8, 32);
 
-            var aesHmac = CryptoMethods.HKDF.DeriveKey(
-                fileKey, salts[7], "AES-256-HMAC"u8.ToArray(), 64);
+                    shuffle = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[4], "Shuffle-Layer"u8, 128);
 
-            return new DerivedKeys(
-                xChaCha,
-                threefish,
-                serpent,
-                aes,
-                shuffle,
-                threefishHmac,
-                serpentHmac,
-                aesHmac,
-                salts);
+                    threefishHmac = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[5], "Threefish-1024-HMAC"u8, 64);
+
+                    serpentHmac = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[6], "Serpent-256-HMAC"u8, 64);
+
+                    aesHmac = CryptoMethods.HKDF.DeriveKey(
+                        fileKeyBytes, salts[7], "AES-256-HMAC"u8, 64);
+                });
+
+                return new DerivedKeys(
+                    xChaCha,
+                    threefish,
+                    serpent,
+                    aes,
+                    shuffle,
+                    threefishHmac,
+                    serpentHmac,
+                    aesHmac,
+                    salts);
+            }
+            catch
+            {
+                // Zero anything that was derived before failure
+                MemoryHandling.Clear(
+                    xChaCha,
+                    threefish,
+                    serpent,
+                    aes,
+                    shuffle,
+                    threefishHmac,
+                    serpentHmac,
+                    aesHmac);
+
+                throw;
+            }
         }
+    }
 
-        public static byte[] DeriveHelloKEK(byte[] pubKeyHash, byte[] salt)
-     => CryptoMethods.HKDF.DeriveKey(
-         pubKeyHash,
-         salt,
-         Encoding.UTF8.GetBytes("Aegis-HELLO-KEK"),
-         64
-     );
-    }
-    }
+}

@@ -28,7 +28,7 @@ internal static class WindowsHelloManager
      => CryptoMethods.HKDF.DeriveKey(
          pubKeyHash,
          salt,
-         Encoding.UTF8.GetBytes("Aegis-HELLO-KEK"),
+         "Aegis-HELLO-KEK"u8.ToArray(),
          32
      );
 
@@ -47,5 +47,32 @@ internal static class WindowsHelloManager
 
         return result.Credential;
     }
+
+    public static async Task<KeyCredential> GetHelloKeyAsync(string username)
+    {
+        // Check if Windows Hello KeyCredential is available
+        if (!await KeyCredentialManager.IsSupportedAsync())
+            throw new NotSupportedException("Windows Hello KeyCredential not available.");
+
+        // Attempt to open the existing key
+        var result = await KeyCredentialManager.OpenAsync(username);
+
+        if (result.Status == KeyCredentialStatus.Success)
+        {
+            // Key exists, return it
+            return result.Credential;
+        }
+        else if (result.Status == KeyCredentialStatus.NotFound)
+        {
+            // No existing key found
+            return null;
+        }
+        else
+        {
+            // Some other error occurred
+            throw new Exception($"Failed to retrieve Windows Hello key: {result.Status}");
+        }
+    }
+
 
 }
