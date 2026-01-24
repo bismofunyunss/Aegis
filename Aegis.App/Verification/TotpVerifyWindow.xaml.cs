@@ -12,58 +12,33 @@ using Aegis.App.Crypto;
 
 namespace Aegis.App.Verification;
 
-public partial class TotpVerifyWindow
+public partial class TotpVerifyWindow : Window
 {
-    private CancellationTokenSource? _lockoutCts;
     private readonly IKeyStore _store;
-    private const int MaxAttempts = 5;
     private readonly byte[] _rawTotpSecret;
+    private const int MaxAttempts = 5;
 
-    public TotpVerifyWindow(string username, byte[] rawTotpSecret = null)
+    public TotpVerifyWindow(IKeyStore store, byte[] rawTotpSecret = null)
     {
         InitializeComponent();
 
-        _store = new IKeyStore(username);
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _rawTotpSecret = rawTotpSecret ?? _store.LoadTotpSecret();
 
         if (rawTotpSecret != null)
         {
             // Registration: show QR
-            _rawTotpSecret = rawTotpSecret;
             string secretBase32 = Base32Encoding.ToString(_rawTotpSecret);
-            GenerateQrCode("Aegis", username, secretBase32);
+            GenerateQrCode("Aegis", store.Username, secretBase32);
         }
         else
         {
-            // Login: load secret from keystore, hide QR
-            _rawTotpSecret = _store.LoadTotpSecret();
+            // Login: hide QR
             QRCodeImage.Visibility = Visibility.Collapsed;
             this.Height -= 175;
         }
 
         UpdateStatus();
-    }
-
-    private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-    {
-        _lockoutCts?.Cancel();
-    }
-
-    private async void StartLockoutMonitor(CancellationToken token)
-    {
-        while (!token.IsCancellationRequested)
-        {
-            UpdateStatus();
-
-            // Refresh every second
-            try
-            {
-                await Task.Delay(1000, token);
-            }
-            catch (TaskCanceledException)
-            {
-                break;
-            }
-        }
     }
 
     private void UpdateStatus()
@@ -88,18 +63,16 @@ public partial class TotpVerifyWindow
 
     private void ConfirmButton_Click(object sender, RoutedEventArgs e)
     {
-        string code = new(CodeTextBox.Text.Where(char.IsDigit).ToArray());
+        string code = new string(CodeTextBox.Text.Where(char.IsDigit).ToArray());
         if (code.Length != 6) return;
 
         try
         {
             _store.Lockout.EnsureNotLocked();
 
-            // Use the raw secret passed in constructor
-            byte[] secret = _rawTotpSecret;
             long lastStep = _store._store.Totp?.LastUsedStep ?? -1;
+            var totp = new Totp(_rawTotpSecret);
 
-            var totp = new Totp(secret);
             if (!totp.VerifyTotp(code, out long step, new VerificationWindow(previous: 1, future: 1)))
             {
                 _store.Lockout.Fail();
@@ -113,6 +86,7 @@ public partial class TotpVerifyWindow
                 throw new SecurityException("Replay attack detected.");
             }
 
+            // Update last used step
             _store.UpdateTotpStep(step);
             _store.Lockout.Success();
 
@@ -155,6 +129,7 @@ public partial class TotpVerifyWindow
         return img;
     }
 }
+
 
 
 

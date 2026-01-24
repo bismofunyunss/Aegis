@@ -52,7 +52,7 @@ namespace Aegis.App.Pages
                 PasswordStrengthBar.Foreground = Brushes.LimeGreen; // optimal
         }
 
-        private async Task RegisterButton_Click(object sender, RoutedEventArgs e)
+        private async void RegisterButton_Click(object sender, RoutedEventArgs e)
         {
             string username = UsernameBox.Text.Trim();
 

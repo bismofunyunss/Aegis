@@ -89,5 +89,4 @@ namespace Aegis.App.Crypto
             }
         }
     }
-
 }

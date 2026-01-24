@@ -2,23 +2,24 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Security;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
 
 public sealed class IKeyStore : IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly string _path;
     private readonly byte[] _hmacKey;
     internal StoreModel _store;
     private bool _disposed;
+    private readonly string _username;
+    public string Username => _username;
 
     public TotpLockoutManager Lockout { get; }
 
@@ -27,8 +28,7 @@ public sealed class IKeyStore : IDisposable
         if (string.IsNullOrWhiteSpace(username))
             throw new ArgumentException(nameof(username));
 
-        _hmacKey = SHA256.HashData(
-            Encoding.UTF8.GetBytes("Aegis-Keystore-HMAC|" + username));
+        _hmacKey = SHA256.HashData(Encoding.UTF8.GetBytes("Aegis-Keystore-HMAC|" + username));
 
         string folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -38,7 +38,7 @@ public sealed class IKeyStore : IDisposable
 
         Directory.CreateDirectory(folder);
         _path = Path.Combine(folder, fileName);
-
+        _username = username;
         _store = LoadInternal();
         Lockout = new TotpLockoutManager(this);
     }
@@ -48,15 +48,12 @@ public sealed class IKeyStore : IDisposable
     // =======================
     public void SaveKeyBlob(KeyBlob blob)
     {
-        if (blob == null)
-            throw new ArgumentNullException(nameof(blob));
-
+        if (blob == null) throw new ArgumentNullException(nameof(blob));
         _store.MasterKey = KeyBlobHex.From(blob);
         SaveInternal();
     }
 
-    public KeyBlob? LoadKeyBlob()
-        => _store.MasterKey?.ToKeyBlob();
+    public KeyBlob? LoadKeyBlob() => _store.MasterKey?.ToKeyBlob();
 
     // =======================
     // 🔑 TOTP
@@ -75,18 +72,12 @@ public sealed class IKeyStore : IDisposable
 
     public byte[] LoadTotpSecret()
     {
-        if (_store.Totp == null)
-            throw new SecurityException("TOTP not enrolled");
-
-        byte[] protectedSecret = Convert.FromHexString(_store.Totp.SecretHex);
+        if (_store.Totp == null) throw new SecurityException("TOTP not enrolled");
+        byte[] secret = Convert.FromHexString(_store.Totp.SecretHex);
         byte[] entropy = Convert.FromHexString(_store.Totp.EntropyHex);
-
         try
         {
-            return ProtectedData.Unprotect(
-                protectedSecret,
-                entropy,
-                DataProtectionScope.CurrentUser);
+            return ProtectedData.Unprotect(secret, entropy, DataProtectionScope.CurrentUser);
         }
         finally
         {
@@ -94,10 +85,15 @@ public sealed class IKeyStore : IDisposable
         }
     }
 
+    public long GetTotpLastStep()
+    {
+        return _store.Totp?.LastUsedStep ?? -1;
+    }
+
     public void UpdateTotpStep(long step)
     {
         if (_store.Totp == null)
-            throw new InvalidOperationException();
+            throw new SecurityException("TOTP not enrolled");
 
         _store.Totp.LastUsedStep = step;
         SaveInternal();
@@ -109,7 +105,6 @@ public sealed class IKeyStore : IDisposable
     private void SaveInternal()
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(_store, JsonOptions);
-
         byte[] hmac;
         using (var h = new HMACSHA256(_hmacKey))
             hmac = h.ComputeHash(payload);
@@ -121,10 +116,17 @@ public sealed class IKeyStore : IDisposable
             Data = _store
         };
 
-        File.WriteAllText(
-            _path,
-            JsonSerializer.Serialize(envelope, JsonOptions),
-            new UTF8Encoding(false));
+        try
+        {
+            File.WriteAllText(_path, JsonSerializer.Serialize(envelope, JsonOptions), new UTF8Encoding(false));
+            MessageBox.Show("Keystore saved at: " + _path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("SaveInternal failed: " + ex.Message);
+            throw;
+        }
+
     }
 
     private StoreModel LoadInternal()
@@ -132,19 +134,15 @@ public sealed class IKeyStore : IDisposable
         if (!File.Exists(_path))
             return new StoreModel();
 
-        var envelope = JsonSerializer.Deserialize<KeystoreEnvelope>(
-            File.ReadAllText(_path))
+        var envelope = JsonSerializer.Deserialize<KeystoreEnvelope>(File.ReadAllText(_path))
             ?? throw new SecurityException("Invalid keystore");
 
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(envelope.Data, JsonOptions);
         byte[] expected;
-
         using (var h = new HMACSHA256(_hmacKey))
             expected = h.ComputeHash(payload);
 
-        if (!CryptographicOperations.FixedTimeEquals(
-                expected,
-                Convert.FromHexString(envelope.HmacHex)))
+        if (!CryptographicOperations.FixedTimeEquals(expected, Convert.FromHexString(envelope.HmacHex)))
             throw new SecurityException("Keystore integrity failure");
 
         envelope.Data.Lockouts ??= new Dictionary<string, LockoutState>();
@@ -182,14 +180,11 @@ public sealed class IKeyStore : IDisposable
         public void Fail()
         {
             State.Failures++;
-
             if (State.Failures >= MaxFailures)
             {
                 int level = State.Failures - MaxFailures + 1;
-                State.LockedUntilUtc =
-                    DateTime.UtcNow + TimeSpan.FromSeconds(BaseDelay.TotalSeconds * level);
+                State.LockedUntilUtc = DateTime.UtcNow + TimeSpan.FromSeconds(BaseDelay.TotalSeconds * level);
             }
-
             _keystore.SaveInternal();
         }
 
@@ -199,7 +194,7 @@ public sealed class IKeyStore : IDisposable
             _keystore.SaveInternal();
         }
 
-        public LockoutSnapshot GetSnapshot() => new()
+        public LockoutSnapshot GetSnapshot() => new LockoutSnapshot
         {
             Failures = State.Failures,
             LockedUntilUtc = State.LockedUntilUtc
@@ -219,7 +214,7 @@ public sealed class IKeyStore : IDisposable
     {
         public int Version { get; set; }
         public string HmacHex { get; set; } = "";
-        public StoreModel Data { get; set; } = new();
+        public StoreModel Data { get; set; } = new StoreModel();
     }
 
     internal sealed class StoreModel
@@ -240,15 +235,13 @@ public sealed class IKeyStore : IDisposable
         public string Account { get; set; } = "";
         public string SecretHex { get; set; } = "";
         public string EntropyHex { get; set; } = "";
-        public long LastUsedStep { get; set; }
+        public long LastUsedStep { get; set; } = -1;
     }
 
-    // =======================
-    // 🔐 KeyBlob HEX (FIXED)
-    // =======================
     internal sealed class KeyBlobHex
     {
         public string LoginCiphertext { get; set; } = "";
+        public string GcmSalt { get; set; } = "";
         public string LoginNonce { get; set; } = "";
         public string LoginTag { get; set; } = "";
         public string PasswordSalt { get; set; } = "";
@@ -260,32 +253,37 @@ public sealed class IKeyStore : IDisposable
         public string HkdfSalt { get; set; } = "";
         public string PcrBaseLine { get; set; } = "";
         public string PrivateBlob { get; set; } = "";
+        public string PublicBlob { get; set; } = "";
         public string RecoveryCiphertext { get; set; } = "";
         public string RecoveryNonce { get; set; } = "";
         public string RecoveryTag { get; set; } = "";
 
         public static KeyBlobHex From(KeyBlob b) => new()
         {
-            LoginCiphertext = Convert.ToHexString(b.LoginCiphertext),
-            LoginNonce = Convert.ToHexString(b.LoginNonce),
-            LoginTag = Convert.ToHexString(b.LoginTag),
-            PasswordSalt = Convert.ToHexString(b.PasswordSalt),
-            HelloSalt = Convert.ToHexString(b.HelloSalt),
-            SealedKek = Convert.ToHexString(b.SealedKek),
-            PolicyDigest = Convert.ToHexString(b.PolicyDigest),
-            Pcrs = b.Pcrs,
+            LoginCiphertext = Convert.ToHexString(b.LoginCiphertext ?? Array.Empty<byte>()),
+            GcmSalt = Convert.ToHexString(b.GcmSalt ?? Array.Empty<byte>()),
+            LoginNonce = Convert.ToHexString(b.LoginNonce ?? Array.Empty<byte>()),
+            LoginTag = Convert.ToHexString(b.LoginTag ?? Array.Empty<byte>()),
+            PasswordSalt = Convert.ToHexString(b.PasswordSalt ?? Array.Empty<byte>()),
+            HelloSalt = Convert.ToHexString(b.HelloSalt ?? Array.Empty<byte>()),
+            SealedKek = Convert.ToHexString(b.SealedKek ?? Array.Empty<byte>()),
+            PolicyDigest = Convert.ToHexString(b.PolicyDigest ?? Array.Empty<byte>()),
+            Pcrs = b.Pcrs ?? Array.Empty<uint>(),
             NvCounter = b.NvCounter,
-            HkdfSalt = Convert.ToHexString(b.HkdfSalt),
-            PcrBaseLine = Convert.ToHexString(b.PcrBaseLine),
-            PrivateBlob = Convert.ToHexString(b.PrivateBlob),
-            RecoveryCiphertext = Convert.ToHexString(b.RecoveryCiphertext),
-            RecoveryNonce = Convert.ToHexString(b.RecoveryNonce),
-            RecoveryTag = Convert.ToHexString(b.RecoveryTag)
+            HkdfSalt = Convert.ToHexString(b.HkdfSalt ?? Array.Empty<byte>()),
+            PcrBaseLine = Convert.ToHexString(b.PcrBaseLine ?? Array.Empty<byte>()),
+            PrivateBlob = Convert.ToHexString(b.PrivateBlob ?? Array.Empty<byte>()),
+            PublicBlob = Convert.ToHexString(b.PublicBlob ?? Array.Empty<byte>()),
+            RecoveryCiphertext = Convert.ToHexString(b.RecoveryCiphertext ?? Array.Empty<byte>()),
+            RecoveryNonce = Convert.ToHexString(b.RecoveryNonce ?? Array.Empty<byte>()),
+            RecoveryTag = Convert.ToHexString(b.RecoveryTag ?? Array.Empty<byte>())
         };
+
 
         public KeyBlob ToKeyBlob() => new()
         {
             LoginCiphertext = Convert.FromHexString(LoginCiphertext),
+            GcmSalt = Convert.FromHexString(GcmSalt),
             LoginNonce = Convert.FromHexString(LoginNonce),
             LoginTag = Convert.FromHexString(LoginTag),
             PasswordSalt = Convert.FromHexString(PasswordSalt),
@@ -296,6 +294,7 @@ public sealed class IKeyStore : IDisposable
             NvCounter = NvCounter,
             HkdfSalt = Convert.FromHexString(HkdfSalt),
             PcrBaseLine = Convert.FromHexString(PcrBaseLine),
+            PublicBlob = Convert.FromHexString(PublicBlob),
             PrivateBlob = Convert.FromHexString(PrivateBlob),
             RecoveryCiphertext = Convert.FromHexString(RecoveryCiphertext),
             RecoveryNonce = Convert.FromHexString(RecoveryNonce),
@@ -303,9 +302,6 @@ public sealed class IKeyStore : IDisposable
         };
     }
 
-    // =======================
-    // Dispose
-    // =======================
     public void Dispose()
     {
         if (_disposed) return;
@@ -314,6 +310,7 @@ public sealed class IKeyStore : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+
 
 
 

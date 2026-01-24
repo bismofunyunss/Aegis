@@ -2,139 +2,113 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Aegis.App.Session
 {
-    public static class Session
+    public class Session
     {
-        private static UserSession _userSession;
-        private static CryptoSession _cryptoSession;
-
-        // ---------------------------
-        // Session management
-        // ---------------------------
-        public static void Start(UserSession user, CryptoSession crypto)
+        public static class SessionManager
         {
-            _cryptoSession?.Dispose();      // dispose any previous crypto session
-            _cryptoSession = crypto ?? throw new ArgumentNullException(nameof(crypto));
-            _userSession = user ?? throw new ArgumentNullException(nameof(user));
+            private static UserSession? _user;
+            private static CryptoSession? _crypto;
+
+            public static void Start(UserSession user, CryptoSession crypto)
+            {
+                _crypto?.Dispose();
+                _user = user ?? throw new ArgumentNullException(nameof(user));
+                _crypto = crypto ?? throw new ArgumentNullException(nameof(crypto));
+            }
+
+            public static void End()
+            {
+                _crypto?.Dispose();
+                _crypto = null;
+                _user = null;
+            }
+
+            public static CryptoSession Crypto =>
+                _crypto ?? throw new SecurityException("Not logged in.");
+
+            public static UserSession User =>
+                _user ?? throw new SecurityException("Not logged in.");
         }
 
-        public static void End()
+
+
+        public sealed class UserSession
         {
-            _cryptoSession?.Dispose();
-            _cryptoSession = null;
-            _userSession = null;
+            public string Username { get; }
+            public byte[] UserId { get; } // optional, better than username long-term
+
+            public UserSession(string username, byte[] userId = null)
+            {
+                Username = username ?? throw new ArgumentNullException(nameof(username));
+                UserId = userId;
+            }
         }
 
-        // ---------------------------
-        // Lambda-style accessors
-        // ---------------------------
-        public static Func<string?> GetUsername => () => _userSession?.Username;
-
-        public static Func<byte[]?> GetUserId => () => _userSession?.UserId;
-
-        public static Func<CryptoSession?> GetCryptoSession => () => _cryptoSession;
-
-        public static Func<bool> IsMasterKeyInitialized => () =>
-            _cryptoSession?.IsMasterKeyInitialized == true;
-
-        public static Action DisposeCryptoSession => () =>
+        public sealed class CryptoSession : IDisposable
         {
-            _cryptoSession?.Dispose();
-            _cryptoSession = null;
-        };
+            private SecureMasterKey? _masterKey;
+            private bool _disposed;
 
-        public static Action DisposeUserSession => () =>
-        {
-            DisposeCryptoSession();
-            _userSession = null;
-        };
-    }
+            public bool IsMasterKeyInitialized =>
+                !_disposed && _masterKey?.IsInitialized == true;
 
-    public sealed class UserSession
-    {
-        public string Username { get; }
-        public byte[] UserId { get; }   // optional, better than username long-term
+            public CryptoSession(SecureMasterKey masterKey)
+            {
+                _masterKey = masterKey ?? throw new ArgumentNullException(nameof(masterKey));
+            }
 
-        public UserSession(string username, byte[] userId = null)
-        {
-            Username = username ?? throw new ArgumentNullException(nameof(username));
-            UserId = userId;
+            public SecureMasterKey MasterKey =>
+                _masterKey ?? throw new ObjectDisposedException(nameof(CryptoSession));
+
+            public SecureMasterKey CloneMasterKey()
+            {
+                EnsureAlive();
+                return CloneMasterKey(_masterKey!);
+            }
+
+            public static SecureMasterKey CloneMasterKey(SecureMasterKey original)
+            {
+                if (original == null || !original.IsInitialized)
+                    throw new SecurityException("Master key unavailable.");
+
+                var span = original.GetKeySpan();
+                var buffer = new byte[span.Length];
+                span.CopyTo(buffer);
+
+                return new SecureMasterKey(buffer);
+            }
+
+            public byte[] DeriveKey(ReadOnlySpan<byte> salt, ReadOnlySpan<byte> info, int length)
+            {
+                EnsureAlive();
+                return _masterKey!.DeriveKey(salt, info, length);
+            }
+
+            private void EnsureAlive()
+            {
+                if (_disposed || _masterKey == null || !_masterKey.IsInitialized)
+                    throw new ObjectDisposedException(nameof(CryptoSession));
+            }
+
+            public void Dispose()
+            {
+                if (_disposed) return;
+
+                _masterKey?.Dispose();
+                _masterKey = null;
+                _disposed = true;
+
+                GC.SuppressFinalize(this);
+            }
+
+            ~CryptoSession() => Dispose();
         }
-    }
-    public interface IUserSessionService
-    {
-        UserSession Current { get; }
-    }
-
-    public sealed class UserSessionService : IUserSessionService
-    {
-        public UserSession Current { get; private set; }
-
-        public void StartSession(UserSession session)
-        {
-            Current = session;
-        }
-
-        public void EndSession()
-        {
-            Current = null;
-        }
-    }
-
-    public sealed class CryptoSession : IDisposable
-    {
-        private SecureMasterKey _masterKey;
-        private bool _disposed;
-
-        /// <summary>
-        /// The current secure master key. Null if not initialized.
-        /// </summary>
-        public SecureMasterKey MasterKey => _disposed ? null : _masterKey;
-
-        /// <summary>
-        /// Indicates if a master key is loaded and usable.
-        /// </summary>
-        public bool IsMasterKeyInitialized => _masterKey?.IsInitialized == true && !_disposed;
-
-        /// <summary>
-        /// Initializes a new crypto session with a SecureMasterKey.
-        /// </summary>
-        public CryptoSession(SecureMasterKey masterKey)
-        {
-            _masterKey = masterKey ?? throw new ArgumentNullException(nameof(masterKey));
-        }
-
-        /// <summary>
-        /// Safely replaces the current master key with a new one, disposing the old.
-        /// </summary>
-        public void SetMasterKey(SecureMasterKey newMasterKey)
-        {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(CryptoSession));
-
-            _masterKey?.Dispose();
-            _masterKey = newMasterKey ?? throw new ArgumentNullException(nameof(newMasterKey));
-        }
-
-        /// <summary>
-        /// Clears the master key from memory and disposes the session.
-        /// </summary>
-        public void Dispose()
-        {
-            if (_disposed) return;
-
-            _masterKey?.Dispose();
-            _masterKey = null;
-
-            _disposed = true;
-            GC.SuppressFinalize(this);
-        }
-
-        ~CryptoSession() => Dispose();
     }
 }

@@ -27,75 +27,73 @@ public class UserRegistrationService
 
     public async Task RegisterAsync()
     {
-        var tpmSealService = new TpmSealService(OpenTpm.CreateTpm2(), _username, PcrSelection.Pcrs);
+        // Create TPM service once
+        var tpmSealService = new TpmSealService(OpenTpm.CreateTpm2(), PcrSelection.Pcrs);
 
-        // After generating the TOTP secret for the user
-        byte[] rawTotpSecret = RandomNumberGenerator.GetBytes(20); // 20 bytes is typical for TOTP
+        // 1️⃣ Generate raw TOTP secret (20 bytes typical)
+       /* byte[] rawTotpSecret = RandomNumberGenerator.GetBytes(20);
 
-        // Save protected secret to keystore
-        using var _store = new IKeyStore(_username);
+        // 2️⃣ Create a single IKeyStore instance for the whole flow
+        using var store = new IKeyStore(_username);
 
-        // Show the TOTP registration window
-        var totpWindow = new TotpVerifyWindow(_username, rawTotpSecret)
+        // 3️⃣ Show TOTP registration window and pass the store
+        var totpWindow = new TotpVerifyWindow(store, rawTotpSecret)
         {
             Owner = Application.Current.MainWindow
         };
 
         bool? result = totpWindow.ShowDialog(); // modal dialog
-
-        if (result == true)
-        {
-            byte[] entropy = RandomNumberGenerator.GetBytes(128);
-
-            byte[] protectedSecret = ProtectedData.Protect(
-                rawTotpSecret,
-                entropy,
-                DataProtectionScope.CurrentUser);
-
-            using var store = new IKeyStore(_username);
-            store.AddTotpSecret(_username, protectedSecret, entropy);
-
-            MessageBox.Show(
-                "TOTP successfully verified! Registration complete.",
-                "Success",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-        else
+        if (result != true)
         {
             MessageBox.Show(
                 "TOTP verification was cancelled or failed.",
                 "Registration Incomplete",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+            return;
         }
 
+        // 4️⃣ TOTP verified → save protected secret
+        byte[] entropy = RandomNumberGenerator.GetBytes(128);
+        byte[] protectedSecret = ProtectedData.Protect(
+            rawTotpSecret,
+            entropy,
+            DataProtectionScope.CurrentUser
+        );
 
+        store.AddTotpSecret(_username, protectedSecret, entropy);
+
+        MessageBox.Show(
+            "TOTP successfully verified!",
+            "Success",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+
+        // 5️⃣ Create and save master key
+       */
         try
         {
-
-            SystemSecurity.EnsureSecurityEnabled();
+           SystemSecurity.EnsureSecurityEnabled();
 
             var recoveryKey = RandomNumberGenerator.GetBytes(32);
 
-            // Seal the master key using TPM and optional Windows Hello
             var blob = await MasterKeyManager.CreateAndWrapMasterKeyAsync(
                 tpmSealService,
-                await WindowsHelloManager.CreateHelloKeyAsync(_username),
                 _password,
                 PcrSelection.Pcrs,
                 _username,
                 recoveryKey
             );
+            using var store = new IKeyStore(_username);
 
-
-            // Save directly to keystore
-            var keyStore = new IKeyStore(_username);
-            keyStore.SaveKeyBlob(blob!);
+        store.SaveKeyBlob(blob); // ✅ saves to same store instance
         }
         catch (Exception ex)
         {
-            MessageBox.Show("There was an error during registration.", "Error", MessageBoxButton.OK,
+            MessageBox.Show(
+                "There was an error during registration. " + ex.Message,
+                "Error",
+                MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
         finally

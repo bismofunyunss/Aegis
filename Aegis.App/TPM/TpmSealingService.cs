@@ -11,21 +11,27 @@ using Tpm2Lib;
 
 namespace Aegis.App.TPM
 {
-    public sealed class TpmSealService
+    using System.Reflection.Metadata;
+    using System.Windows;
+
+    public static class Log
+    {
+        public static void Show(string message, string title = "TPM Log")
+        {
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+public sealed class TpmSealService
     {
         private readonly Tpm2 _tpm;
         private readonly uint[] _pcrs;
-        private readonly uint _nvIndex;
 
-        // base offset for logical 1-based counter
-        private ulong _nvBase = 0;
-
-        public TpmSealService(Tpm2 tpm, string username, uint[] pcrs = null)
+        public TpmSealService(Tpm2 tpm, uint[] pcrs = null)
         {
             _tpm = tpm ?? throw new ArgumentNullException(nameof(tpm));
             _pcrs = pcrs ?? new uint[] { 0, 2, 4, 7, 11 };
         }
-
 
         public TpmHandle CreateOrLoadSrk(uint handle = 0x81000001)
         {
@@ -124,7 +130,7 @@ namespace Aegis.App.TPM
                     publicArea,
                     Array.Empty<byte>(), // outsideInfo
                     Array.Empty<PcrSelection>(),
-                    out _,
+                    out TpmPublic createdPublic,
                     out _,
                     out _,
                     out _
@@ -136,6 +142,7 @@ namespace Aegis.App.TPM
                 // ✅ Return blob with updated counter
                 return new KeyBlob()
                 {
+                    PublicBlob = createdPublic.GetTpmRepresentation(),
                     PrivateBlob = privateBlob.buffer,
                     PolicyDigest = policyDigest,
                     Pcrs = _pcrs,
@@ -172,34 +179,37 @@ namespace Aegis.App.TPM
 
             try
             {
+                var auth = new AuthSession(session);
+
                 var pcrSelection = new[] { new PcrSelection(TpmAlgId.Sha256, blob.Pcrs) };
                 _tpm.PolicyPCR(session, null, pcrSelection);
                 _tpm.PolicyAuthValue(session);
 
-                var publicArea = new TpmPublic(
-                    TpmAlgId.Sha256,
-                    ObjectAttr.FixedTPM |
-                    ObjectAttr.FixedParent |
-                    ObjectAttr.AdminWithPolicy |
-                    ObjectAttr.NoDA,
-                    blob.PolicyDigest,
-                    new KeyedhashParms(new NullSchemeKeyedhash()),
-                    new Tpm2bDigestKeyedhash()
-                );
-
+                TpmPublic publicArea = Marshaller.FromTpmRepresentation<TpmPublic>(blob.PublicBlob);
+                
                 TpmHandle handle = _tpm.Load(srk, privateBlob, publicArea);
 
-                byte[] secret = _tpm.Unseal(handle);
+
+                byte[] secret = _tpm[auth].Unseal(handle);
                 _tpm.FlushContext(handle);
 
                 return secret;
             }
             finally
             {
-                _tpm.FlushContext(session);
+                try
+                {
+                    _tpm.SafeFlushContext(session);
+                }
+                catch 
+                {
+                    // this will always throw. Ignore exception
+                }
             }
+
         }
     }
+
 
     public class TpmNvCounter
     {
@@ -251,22 +261,21 @@ namespace Aegis.App.TPM
                 nvHandle,
                 TpmAlgId.Sha256,
                 NvAttr.Counter | NvAttr.Authread | NvAttr.Authwrite | NvAttr.NoDa,
-                Array.Empty<byte>(), // policy: none
-                8 // 8-byte counter
+                Array.Empty<byte>(),
+                8
             );
 
             try
             {
                 _tpm.NvDefineSpace(TpmRh.Owner, Array.Empty<byte>(), nvPublic);
+                // Do NOT increment here
             }
             catch (TpmException ex) when (ex.RawResponse == TpmRc.NvDefined)
             {
                 // Another thread/process defined it → OK
             }
-
-            // Increment once to initialize
-            _tpm.NvIncrement(TpmRh.Owner, nvHandle);
         }
+
 
         /// <summary>
         /// Read the TPM counter value (raw 64-bit)
@@ -274,7 +283,7 @@ namespace Aegis.App.TPM
         public ulong GetNvCounter()
         {
             var nvHandle = TpmHandle.NV(_nvIndex);
-            byte[] data = _tpm.NvRead(TpmRh.Owner, nvHandle, 8, 0);
+            byte[] data = _tpm.NvRead(nvHandle, nvHandle, 8, 0);
             return BinaryPrimitives.ReadUInt64BigEndian(data);
         }
 
@@ -284,7 +293,7 @@ namespace Aegis.App.TPM
         public ulong IncrementCounter()
         {
             var nvHandle = TpmHandle.NV(_nvIndex);
-            _tpm.NvIncrement(TpmRh.Owner, nvHandle);
+            _tpm.NvIncrement(nvHandle, nvHandle);
             return GetNvCounter();
         }
 

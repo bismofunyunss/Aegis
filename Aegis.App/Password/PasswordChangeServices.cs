@@ -40,21 +40,21 @@ namespace Aegis.App.Password
                        ?? throw new SecurityException("No master key available");
 
             // Initialize TPM service for unsealing
-            var tpmSeal = new TpmSealService(OpenTpm.CreateTpm2(), username, PcrSelection.Pcrs);
+            var tpmSeal = new TpmSealService(OpenTpm.CreateTpm2(), PcrSelection.Pcrs);
 
             // Prepare Windows Hello key
             var helloKey = await WindowsHelloManager.CreateHelloKeyAsync(username);
 
             // Unseal current master key
-            using var unsealedMasterKey = await MasterKeyManager.LoginAndUnwrapMasterKeyAsync(
+            using var cryptoSession = await MasterKeyManager.LoginAndUnwrapMasterKeyAsync(
                 tpmSeal,
-                helloKey,
                 SecureStringUtil.ToBytes.ToUtf8Bytes(oldPassword),
                 username, blob, pcrs
             );
 
-            // Copy master key for re-wrapping
-            var masterKeyCopy = unsealedMasterKey.GetKeySpan().ToArray();
+            // Create a copy of the master key safely
+            byte[] tempKey = new byte[cryptoSession.MasterKey.Length];
+            cryptoSession.MasterKey.CopyKeyTo(tempKey);
 
             try
             {
@@ -78,7 +78,7 @@ namespace Aegis.App.Password
                 );
 
                 // --- Re-wrap the master key with new KEK ---
-                byte[] rewrappedMasterKey = KeyWrap.AesKeyWrap(newMasterKek, masterKeyCopy);
+                byte[] rewrappedMasterKey = KeyWrap.AesKeyWrap(newMasterKek, tempKey);
 
                 // --- Re-seal AES-GCM login layer ---
                 byte[] gcmSalt = RandomNumberGenerator.GetBytes(128);
@@ -103,10 +103,10 @@ namespace Aegis.App.Password
                     recoveryKey = RandomNumberGenerator.GetBytes(32);
                     recoveryNonce = RandomNumberGenerator.GetBytes(12);
                     recoveryTag = new byte[16];
-                    recoveryCiphertext = new byte[masterKeyCopy.Length];
+                    recoveryCiphertext = new byte[tempKey.Length];
 
                     using var aesGcm = new AesGcm(recoveryKey, 16);
-                    aesGcm.Encrypt(recoveryNonce, masterKeyCopy, recoveryCiphertext, recoveryTag);
+                    aesGcm.Encrypt(recoveryNonce, tempKey, recoveryCiphertext, recoveryTag);
                 }
 
                 // --- Update KeyBlob with new wrapped key, AES-GCM layer, and optionally recovery key ---
@@ -131,7 +131,7 @@ namespace Aegis.App.Password
             finally
             {
                 // Zero sensitive buffers
-                CryptographicOperations.ZeroMemory(masterKeyCopy);
+                CryptographicOperations.ZeroMemory(tempKey);
             }
         }
     }

@@ -12,21 +12,19 @@ namespace Aegis.App.PcrUtils
 {
     internal class PcrUtilities
     {
-        public static Dictionary<uint, byte[]> ReadPcrs(
-Tpm2 tpm,
-uint[] pcrs)
+        public static Dictionary<uint, byte[]> ReadPcrs(Tpm2 tpm, uint[] pcrs)
         {
-            var selection = new PcrSelection(
-                TpmAlgId.Sha256,
-                pcrs.Select(p => (uint)p).ToArray()
-            );
+            if (tpm == null) throw new ArgumentNullException(nameof(tpm));
+            if (pcrs == null || pcrs.Length == 0)
+                throw new ArgumentException("PCR list cannot be null or empty", nameof(pcrs));
 
-            tpm.PcrRead(
-                new[] { selection },
-                out _,
-                out Tpm2bDigest[] values
-            );
+            // Build a TPM PCR selection for SHA256 and your PCR list
+            var selection = new Tpm2Lib.PcrSelection(TpmAlgId.Sha256, pcrs);
 
+            // Perform the PCR read
+            tpm.PcrRead(new[] { selection }, out _, out Tpm2bDigest[] values);
+
+            // Map the returned PCR digest values to the PCR indices
             var result = new Dictionary<uint, byte[]>();
             for (int i = 0; i < pcrs.Length; i++)
             {
@@ -35,6 +33,10 @@ uint[] pcrs)
 
             return result;
         }
+
+
+
+
 
         public static byte[] SerializeBaseline(Dictionary<uint, byte[]> pcrs)
         {

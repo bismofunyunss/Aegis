@@ -83,6 +83,5 @@ namespace Aegis.App.Crypto
                 return salts;
             }
         }
-
 }
 }

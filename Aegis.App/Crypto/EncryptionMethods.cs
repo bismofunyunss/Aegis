@@ -17,6 +17,7 @@ using System.Security.Cryptography;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
+using static Aegis.App.Session.Session;
 using Path = System.IO.Path;
 
 namespace Aegis.App;
@@ -449,11 +450,6 @@ public static class ParallelCtrEncryptor
                 ms.Write(aesIv);
                 header = ms.ToArray();
             }
-
-
-            var crypto = Session.Session.GetCryptoSession();
-            if (crypto == null || !crypto.IsMasterKeyInitialized)
-                throw new SecurityException("Crypto session not initialized.");
 
             using (var hmac = new HMACSHA256(keys.AesHmacKey))
                 headerMac = hmac.ComputeHash(header);

@@ -174,21 +174,6 @@
                     <ColumnDefinition Width="Auto" />
                     <!-- TPM status on right -->
                 </Grid.ColumnDefinitions>
-
-                <!-- Rainbow welcome label -->
-                <controls:RainbowLabel x:Name="RainbowWelcomeLabel"
-                                       Grid.Column="0"
-                                       HorizontalAlignment="Left"
-                                       VerticalAlignment="Bottom"
-                                       FontSize="14"
-                                       Margin="15, 0, 20, 15"/>
-
-                <!-- TPM Key Status -->
-                <controls:TPMKeyStatus Grid.Column="0" x:Name="TpmKeyStatus"
-                                       HorizontalAlignment="Right"
-                                       VerticalAlignment="Bottom"
-                                       Margin="0,0,20,15"/>
-
             </Grid>
         </Grid>
     </Grid>

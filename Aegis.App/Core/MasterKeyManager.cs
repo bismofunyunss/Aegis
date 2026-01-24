@@ -1,130 +1,100 @@
 ﻿using Aegis.App.Crypto;
 using Aegis.App.PcrUtils;
+using Aegis.App.Registration;
 using Aegis.App.TPM;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows;
+using Tpm2Lib;
 using Windows.Security.Credentials;
-using Aegis.App.Registration;
+using Aegis.App.Session;
 using static Aegis.App.TPM.TpmSealService;
 
 namespace Aegis.App.Core;
 
 public sealed class MasterKeyManager
 {
-    public static async Task<KeyBlob?> CreateAndWrapMasterKeyAsync(
-        TpmSealService tpm,
-        KeyCredential helloKey,
-        byte[] userPassword,
-        uint[] pcrs,
-        string username,
-        byte[]? recoveryKey)
+    public static async Task<KeyBlob> CreateAndWrapMasterKeyAsync(
+      TpmSealService tpm,
+      byte[] userPassword,
+      uint[] pcrs,
+      string username,
+      byte[] recoveryKey)
     {
-        if (tpm == null) throw new ArgumentNullException(nameof(tpm));
-        if (helloKey == null) throw new ArgumentNullException(nameof(helloKey));
-        if (userPassword == null || userPassword.Length == 0)
-            throw new ArgumentException("Password required", nameof(userPassword));
+        byte[] masterKey = RandomNumberGenerator.GetBytes(64);
+        byte[] tpmKek = RandomNumberGenerator.GetBytes(32);
 
-        byte[]? masterKey = null;
-        byte[]? helloKek = null;
-        byte[]? passwordKek = null;
-        byte[]? kek = null;
+        byte[] passwordSalt = RandomNumberGenerator.GetBytes(128);
+        byte[] hkdfSalt = RandomNumberGenerator.GetBytes(128);
+        byte[] gcmSalt = RandomNumberGenerator.GetBytes(128);
 
-        try
-        {
-            // 1️⃣ Create master key and seal to TPM
-            masterKey = RandomNumberGenerator.GetBytes(64);
+        // 🔐 Password KEK
+        byte[] passwordKek =
+            await PasswordDerivation.Argon2Id(userPassword, passwordSalt, 32);
 
-            var salt = RandomNumberGenerator.GetBytes(128);
+        // 🔐 Final KEK = TPM + Password
+        byte[] finalKek = CryptoMethods.HKDF.DeriveKey(
+            tpmKek.Concat(passwordKek).ToArray(),
+            hkdfSalt,
+            "Master-KEK"u8.ToArray(),
+            32);
 
-            // 2️⃣ Windows Hello KEK
-            var helloSalt = RandomNumberGenerator.GetBytes(128);
-            var helloHash = await WindowsHelloManager.GetHelloPublicKeyHashAsync(helloKey);
-            helloKek = WindowsHelloManager.DeriveHelloKEK(helloHash, helloSalt);
+        // 🔐 Wrap master key
+        byte[] wrappedMaster = KeyWrap.AesKeyWrap(finalKek, masterKey);
 
-            // 3️⃣ User password KEK (Argon2id)
-            var passwordSalt = RandomNumberGenerator.GetBytes(128);
-            passwordKek = await PasswordDerivation.Argon2Id(userPassword, passwordSalt, 32);
+        // 🔐 Login envelope
+        byte[] loginNonce = RandomNumberGenerator.GetBytes(12);
+        byte[] loginTag = new byte[16];
+        byte[] loginCiphertext = new byte[wrappedMaster.Length];
 
-            kek = CryptoMethods.HKDF.DeriveKey(helloKek.Concat(passwordKek).ToArray(), salt,
-                "Master-Key-Kek"u8.ToArray(), 32);
-            var wrappedPassword = KeyWrap.AesKeyWrap(kek, masterKey);
+        byte[] gcmKek = CryptoMethods.HKDF.DeriveKey(
+            finalKek, gcmSalt, "GCM-KEK"u8.ToArray(), 32);
 
-            var gcmSalt = RandomNumberGenerator.GetBytes(128);
-            var gcmKek = CryptoMethods.HKDF.DeriveKey(kek, gcmSalt, "Aes-Gcm-Kek"u8.ToArray(), 32);
+        using (var gcm = new AesGcm(gcmKek, 16))
+            gcm.Encrypt(loginNonce, wrappedMaster, loginCiphertext, loginTag);
 
-            var loginNonce = RandomNumberGenerator.GetBytes(12);
-            var loginTag = new byte[16];
-            var loginCiphertext = new byte[wrappedPassword.Length];
+        // 🔐 TPM seal KEK
+        var counter = new TpmNvCounter(OpenTpm.CreateTpm2(), username, pcrs);
+        var srk = tpm.CreateOrLoadSrk();
+        var blob = tpm.Seal(tpmKek, srk, counter);
 
-            using (var aesGcm = new AesGcm(gcmKek, 16))
-            {
-                aesGcm.Encrypt(
-                    loginNonce,
-                    wrappedPassword,
-                    loginCiphertext,
-                    loginTag);
-            }
+    // 🔐 Recovery envelope
+    byte[] recoveryNonce = RandomNumberGenerator.GetBytes(12);
+    byte[] recoveryTag = new byte[16];
+    byte[] recoveryCiphertext = new byte[masterKey.Length];
 
-            // 4️⃣ Recovery envelope (ALWAYS created)
-            var recoveryNonce = RandomNumberGenerator.GetBytes(12);
-            var recoveryTag = new byte[16];
-            var recoveryCiphertext = new byte[masterKey.Length];
+    using (var gcm = new AesGcm(recoveryKey, 16))
+        gcm.Encrypt(
+            recoveryNonce,
+            masterKey,
+            recoveryCiphertext,
+            recoveryTag,
+            BitConverter.GetBytes(counter.GetNvCounter()));
 
-            TpmNvCounter counter = new TpmNvCounter(OpenTpm.CreateTpm2(), username, pcrs);
-            var srk = tpm.CreateOrLoadSrk();
-            var sealedData = tpm.Seal(kek, srk, counter);
+    return new KeyBlob
+    {
+        SealedKek = blob.PrivateBlob,
+        PublicBlob = blob.PublicBlob,
+        PolicyDigest = blob.PolicyDigest,
+        Pcrs = blob.Pcrs,
+        NvCounter = counter.GetNvCounter(),
 
-            // Use the NV counter *after seal* as AAD for recovery encryption
-            var aad = BitConverter.GetBytes(counter.GetNvCounter());
+        PasswordSalt = passwordSalt,
+        HkdfSalt = hkdfSalt,
+        GcmSalt = gcmSalt,
 
-            using (var aesGcm = new AesGcm(recoveryKey, 16))
-            {
-                aesGcm.Encrypt(
-                    recoveryNonce,
-                    masterKey,
-                    recoveryCiphertext,
-                    recoveryTag,
-                    aad
-                );
-            }
+        LoginCiphertext = loginCiphertext,
+        LoginNonce = loginNonce,
+        LoginTag = loginTag,
 
+        RecoveryCiphertext = recoveryCiphertext,
+        RecoveryNonce = recoveryNonce,
+        RecoveryTag = recoveryTag
+    };
+}
 
-            using var key = new SecureMasterKey(masterKey);
-            var pcrValues = PcrUtilities.ReadPcrs(OpenTpm.CreateTpm2(), pcrs);
-            var baseline = PcrUtilities.SerializeBaseline(pcrValues);
-            var encryptedBaseline = PcrUtilities.EncryptBaseline(key, baseline);
-
-
-            // 5️⃣ Return fully populated KeyBlob
-            return new KeyBlob
-            {
-                RecoveryCiphertext = recoveryCiphertext,
-                RecoveryTag = recoveryTag,
-                RecoveryNonce = recoveryNonce,
-                PasswordSalt = passwordSalt,
-                HelloSalt = helloSalt,
-                SealedKek = sealedData.PrivateBlob,
-                PolicyDigest = sealedData.PolicyDigest,
-                Pcrs = sealedData.Pcrs,
-                NvCounter = counter.GetNvCounter(),
-                HkdfSalt = salt,
-                PcrBaseLine = encryptedBaseline,
-                LoginCiphertext = loginCiphertext,
-                LoginNonce = loginNonce,
-                LoginTag = loginTag,
-                GcmSalt = gcmSalt,
-            };
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(kek);
-            CryptographicOperations.ZeroMemory(masterKey);
-            CryptographicOperations.ZeroMemory(helloKek);
-            CryptographicOperations.ZeroMemory(passwordKek);
-        }
-    }
 
     /// <summary>
     ///     Unseals the master key from the TPM, verifies PCR integrity, and optionally unwraps via recovery key.
@@ -135,103 +105,55 @@ public sealed class MasterKeyManager
     /// <param name="userPassword">User password</param>
     /// <param name="recoveryKey">Optional recovery key</param>
     /// <returns>SecureMasterKey instance if successful</returns>
-    public static async Task<SecureMasterKey> LoginAndUnwrapMasterKeyAsync(
+    public static async Task<Session.Session.CryptoSession> LoginAndUnwrapMasterKeyAsync(
         TpmSealService tpm,
-        KeyCredential helloKey,
         byte[] userPassword,
         string username,
         KeyBlob blob,
         uint[] pcrs)
     {
-        if (tpm == null) throw new ArgumentNullException(nameof(tpm));
-        if (helloKey == null) throw new ArgumentNullException(nameof(helloKey));
-        if (userPassword == null || userPassword.Length == 0)
-            throw new ArgumentException("Password required", nameof(userPassword));
-        if (blob == null) throw new ArgumentNullException(nameof(blob));
+        // 🔐 Password KEK
+        byte[] passwordKek =
+            await PasswordDerivation.Argon2Id(userPassword, blob.PasswordSalt, 32);
 
-        byte[]? helloKek = null;
-        byte[]? passwordKek = null;
-        byte[]? kek = null;
-        byte[]? gcmKek = null;
-        byte[]? wrappedMasterKey = null;
-        byte[]? masterKey = null;
+        // 🔐 TPM unseal (Hello authorizes this implicitly)
+        var srk = tpm.CreateOrLoadSrk();
+        var counter = new TpmNvCounter(OpenTpm.CreateTpm2(), username, pcrs);
 
-        try
+        byte[] tpmKek = tpm.Unseal(new KeyBlob
         {
-            // 1️⃣ Windows Hello KEK (TPM-backed)
-            var helloHash = await WindowsHelloManager.GetHelloPublicKeyHashAsync(helloKey);
-            helloKek = WindowsHelloManager.DeriveHelloKEK(helloHash, blob.HelloSalt);
+            PrivateBlob = blob.SealedKek,
+            PublicBlob = blob.PublicBlob,
+            PolicyDigest = blob.PolicyDigest,
+            Pcrs = blob.Pcrs,
+            NvCounter = blob.NvCounter
+        }, srk, counter);
 
-            // 2️⃣ User password KEK (Argon2id)
-            passwordKek = await PasswordDerivation.Argon2Id(userPassword, blob.PasswordSalt, 32);
+        // 🔐 Final KEK
+        byte[] finalKek = CryptoMethods.HKDF.DeriveKey(
+            tpmKek.Concat(passwordKek).ToArray(),
+            blob.HkdfSalt,
+            "Master-KEK"u8.ToArray(),
+            32);
 
-            // 3️⃣ Master KEK (HKDF from Hello + Password)
-            kek = CryptoMethods.HKDF.DeriveKey(
-                helloKek.Concat(passwordKek).ToArray(),
-                blob.HkdfSalt,
-                "Master-Key-Kek"u8,
-                32);
+        // 🔐 Login unwrap
+        byte[] wrappedMaster = new byte[blob.LoginCiphertext.Length];
+        byte[] gcmKek = CryptoMethods.HKDF.DeriveKey(
+            finalKek, blob.GcmSalt, "GCM-KEK"u8.ToArray(), 32);
 
-            // 4️⃣ TPM unseal (PCR + NV enforced)
-            var srk = tpm.CreateOrLoadSrk();
+        using (var gcm = new AesGcm(gcmKek, 16))
+            gcm.Decrypt(
+                blob.LoginNonce,
+                blob.LoginCiphertext,
+                blob.LoginTag,
+                wrappedMaster);
 
-            var metadata = new KeyBlob()
-            {
-                PrivateBlob = blob.SealedKek,
-                PolicyDigest = blob.PolicyDigest,
-                Pcrs = blob.Pcrs,
-                NvCounter = blob.NvCounter
-            };
+        byte[] masterKey = KeyWrap.AesKeyUnwrap(finalKek, wrappedMaster);
+        var secureKey = new SecureMasterKey(masterKey);
 
-            TpmNvCounter counter = new TpmNvCounter(OpenTpm.CreateTpm2(), username, pcrs);
-            var unsealedKek = tpm.Unseal(metadata, srk, counter);
-
-            if (!CryptographicOperations.FixedTimeEquals(kek, unsealedKek))
-                throw new SecurityException("TPM KEK mismatch");
-
-            // 5️⃣ AES-GCM login KEK
-            gcmKek = CryptoMethods.HKDF.DeriveKey(
-                kek,
-                blob.GcmSalt,
-                "Aes-Gcm-Kek"u8,
-                32);
-
-            // 6️⃣ Decrypt wrapped master key (AES-GCM)
-            wrappedMasterKey = new byte[blob.LoginCiphertext.Length];
-            using (var aesGcm = new AesGcm(gcmKek, 16))
-            {
-                aesGcm.Decrypt(
-                    blob.LoginNonce,
-                    blob.LoginCiphertext,
-                    blob.LoginTag,
-                    wrappedMasterKey);
-            }
-
-            // 7️⃣ AES Key Unwrap → master key
-            masterKey = KeyWrap.AesKeyUnwrap(kek, wrappedMasterKey);
-
-            // 8️⃣ Verify PCR baseline
-            using var secure = new SecureMasterKey(masterKey);
-            var currentPcrs = PcrUtilities.ReadPcrs(OpenTpm.CreateTpm2(), pcrs);
-            var serialized = PcrUtilities.SerializeBaseline(currentPcrs);
-            var baseline = PcrUtilities.DecryptBaseline(secure, blob.PcrBaseLine);
-
-            if (!CryptographicOperations.FixedTimeEquals(serialized, baseline))
-                throw new SecurityException("PCR baseline mismatch");
-
-            // ✅ Success
-            return secure;
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(helloKek);
-            CryptographicOperations.ZeroMemory(passwordKek);
-            CryptographicOperations.ZeroMemory(kek);
-            CryptographicOperations.ZeroMemory(gcmKek);
-            CryptographicOperations.ZeroMemory(wrappedMasterKey);
-            CryptographicOperations.ZeroMemory(masterKey);
-        }
+        return new Session.Session.CryptoSession(secureKey);
     }
+
 
     public static SecureRecoveryKey RecoverAndRotateRecoveryKey(
         IntPtr pinnedRecoveryKey,
