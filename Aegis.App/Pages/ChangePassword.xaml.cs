@@ -1,24 +1,15 @@
-﻿using Aegis.App.Core;
-using Aegis.App.Crypto;
-using Aegis.App.TPM;
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Security;
-using System.Security.Cryptography;
-using System.Text;
 using System.Windows;
-using Aegis.App.Password;
 
 namespace Aegis.App.Pages
 {
     public partial class ChangePassword : Window
     {
-        private string _username;
-        private byte[] _password;
-        public ChangePassword(string username)
+        public ChangePassword()
         {
             InitializeComponent();
-            _username = username;
         }
 
         private void PasswordChanged(object sender, RoutedEventArgs e)
@@ -26,14 +17,13 @@ namespace Aegis.App.Pages
             SecureString pwd = NewPasswordBox.SecurePassword;
             SecureString confirm = ConfirmPasswordBox.SecurePassword;
 
-            var entropy=
-                PasswordUtilities.ComputeEntropyOnly(pwd);
+            var (isValid, entropy) =
+                PasswordUtilities.CheckPasswordAndComputeEntropy(pwd, confirm);
 
             EntropyText.Text = $"Entropy: {(int)entropy} bits";
             EntropyProgress.Value = Math.Min(entropy, EntropyProgress.Maximum);
 
-            var passwordPolicy = PasswordUtilities.ValidatePasswordPolicy(pwd, confirm);
-            ChangeButton.IsEnabled = PasswordUtilities.SecureEquals(pwd, confirm) && passwordPolicy && entropy >= 80;
+            ChangeButton.IsEnabled = isValid && entropy >= 80;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -41,10 +31,17 @@ namespace Aegis.App.Pages
             Close();
         }
 
-        private async void Change_Click(object sender, RoutedEventArgs e)
+        private void Change_Click(object sender, RoutedEventArgs e)
         {
-           await PasswordChangeService.ChangePasswordAsync(_username, CurrentPasswordBox.SecurePassword, NewPasswordBox.SecurePassword,
-                false);
+            // You already have this flow planned:
+            // 1. Unseal master key
+            // 2. Re-derive password KEK
+            // 3. Rewrap master key
+            // 4. Zero all intermediates
+            // 5. Persist updated KeyBlob
+
+            DialogResult = true;
+            Close();
         }
     }
 }

@@ -1,20 +1,24 @@
 ﻿using Aegis.App.Core;
 using Aegis.App.Crypto;
+using Aegis.App.Helpers;
 using Aegis.App.IO;
 using Aegis.App.TPM;
 using Aegis.App.Verification;
 using OtpNet;
+using System.IO;
 using System.Security.Cryptography;
 using System.Windows;
-using Aegis.App.PcrUtils;
+using Tpm2Lib;
+using static Aegis.App.TPM.TpmSealService;
 
 namespace Aegis.App.Registration;
 
 public class UserRegistrationService
 {
-    private readonly byte[] _password;
     private readonly string _userFolder;
     private readonly string _username;
+    private readonly byte[] _password;
+    private SoftwareKeyStore _store;
 
     public UserRegistrationService(string username, byte[] password)
     {
@@ -27,80 +31,38 @@ public class UserRegistrationService
 
     public async Task RegisterAsync()
     {
-        var tpmSealService = new TpmSealService(OpenTpm.CreateTpm2(), _username, PcrSelection.Pcrs);
+        uint[] pcrs = { 0, 2, 4, 7, 11 };
+        TpmSealService tpmSealService = new TpmSealService(OpenTpm.CreateTpm2(), _username, pcrs);
 
-        // After generating the TOTP secret for the user
-        byte[] rawTotpSecret = RandomNumberGenerator.GetBytes(20); // 20 bytes is typical for TOTP
+        // Generate a recovery key
+        byte[] recoveryKey = RandomNumberGenerator.GetBytes(32);
 
-        // Save protected secret to keystore
-        using var _store = new IKeyStore(_username);
-
-        // Show the TOTP registration window
-        var totpWindow = new TotpVerifyWindow(_username, rawTotpSecret)
-        {
-            Owner = Application.Current.MainWindow
-        };
-
-        bool? result = totpWindow.ShowDialog(); // modal dialog
-
-        if (result == true)
-        {
-            byte[] entropy = RandomNumberGenerator.GetBytes(128);
-
-            byte[] protectedSecret = ProtectedData.Protect(
-                rawTotpSecret,
-                entropy,
-                DataProtectionScope.CurrentUser);
-
-            using var store = new IKeyStore(_username);
-            store.AddTotpSecret(_username, protectedSecret, entropy);
-
-            MessageBox.Show(
-                "TOTP successfully verified! Registration complete.",
-                "Success",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-        else
-        {
-            MessageBox.Show(
-                "TOTP verification was cancelled or failed.",
-                "Registration Incomplete",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
-
+        // Display it to the user
+        RecoveryKey window = new RecoveryKey(recoveryKey);
+        window.ShowDialog();
+        
 
         try
         {
-
             SystemSecurity.EnsureSecurityEnabled();
 
-            var recoveryKey = RandomNumberGenerator.GetBytes(32);
-
             // Seal the master key using TPM and optional Windows Hello
-            var blob = await MasterKeyManager.CreateAndWrapMasterKeyAsync(
+            KeyBlob? blob = await MasterKeyManager.CreateAndWrapMasterKeyAsync(
                 tpmSealService,
                 await WindowsHelloManager.CreateHelloKeyAsync(_username),
                 _password,
-                PcrSelection.Pcrs,
-                _username,
+                pcrs,
                 recoveryKey
             );
-
+           
 
             // Save directly to keystore
-            var keyStore = new IKeyStore(_username);
+            IKeyStore keyStore = new IKeyStore(_username);
             keyStore.SaveKeyBlob(blob!);
         }
         catch (Exception ex)
         {
-            MessageBox.Show("There was an error during registration.", "Error", MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-        finally
-        {
-            MemoryHandling.Clear(_password);
+            MessageBox.Show("There was an error during registration.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

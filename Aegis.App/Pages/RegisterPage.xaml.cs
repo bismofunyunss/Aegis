@@ -52,12 +52,9 @@ namespace Aegis.App.Pages
                 PasswordStrengthBar.Foreground = Brushes.LimeGreen; // optimal
         }
 
-        private async Task RegisterButton_Click(object sender, RoutedEventArgs e)
+        private async void RegisterButton_Click(object sender, RoutedEventArgs e)
         {
             string username = UsernameBox.Text.Trim();
-
-            if (string.IsNullOrEmpty(username))
-                return;
 
             var password = PasswordBox.SecurePassword;
             var confirmPassword = ConfirmPasswordBox.SecurePassword;
@@ -69,13 +66,14 @@ namespace Aegis.App.Pages
                 if (!PasswordUtilities.ValidatePasswordPolicy(password, confirmPassword))
                 {
                     MessageBox.Show(
-                        "Password must be 12-64 characters, include uppercase, lowercase, number, special character, and both passwords must match.",
+                        "Password must be 12-64 characters, include uppercase, lowercase, number, special character, and match confirmation.",
                         "Invalid Password",
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning
                     );
                     return;
                 }
+
 
                 RegisterButton.IsEnabled = false;
 
@@ -92,10 +90,6 @@ namespace Aegis.App.Pages
                     MessageBoxButton.OK,
                     MessageBoxImage.Information
                 );
-
-                UsernameBox.Clear();
-                PasswordBox.Clear();
-                ConfirmPasswordBox.Clear();
             }
             catch (Exception ex)
             {
@@ -112,8 +106,6 @@ namespace Aegis.App.Pages
 
                 // Always zero out sensitive data
                 MemoryHandling.Clear(passwordBytes);
-                password.Dispose();
-                confirmPassword.Dispose();
             }
         }
     }

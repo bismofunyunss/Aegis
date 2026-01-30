@@ -1,0 +1,270 @@
+﻿<Window x:Class="Aegis.App.Verification.TotpLoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Two-Factor Authentication"
+        Width="650"
+        Height="720"
+        MinWidth="650"
+        MinHeight="720"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#111318" x:ClassModifier="internal">
+
+    <Grid Background="#111318">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- =========================================================
+ HEADER
+ ========================================================= -->
+
+        <Border Grid.Row="0"
+    Padding="42,30,42,26"
+    BorderBrush="#252932"
+    BorderThickness="0,0,0,1">
+
+            <StackPanel>
+
+                <TextBlock Text="Two-Factor Authentication"
+               Foreground="White"
+               FontSize="24"
+               FontWeight="SemiBold"
+               HorizontalAlignment="Center"/>
+
+                <TextBlock Text="Additional verification is required to continue."
+               Foreground="#9DA3AE"
+               FontSize="13"
+               TextAlignment="Center"
+               TextWrapping="Wrap"
+               Margin="0,7,0,0"/>
+
+            </StackPanel>
+
+        </Border>
+
+
+        <!-- =========================================================
+ CONTENT
+ ========================================================= -->
+
+        <ScrollViewer Grid.Row="1"
+          VerticalScrollBarVisibility="Auto"
+          HorizontalScrollBarVisibility="Disabled">
+
+            <StackPanel Width="560"
+            MaxWidth="560"
+            HorizontalAlignment="Center"
+            Margin="40,42,40,42">
+
+
+                <!-- =================================================
+         AUTHENTICATION CARD
+         ================================================= -->
+
+                <Border Background="#171A20"
+            BorderBrush="#292D35"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="36">
+
+                    <StackPanel>
+
+                        <!-- SECURITY ICON / INDICATOR -->
+
+                        <Border Width="54"
+                    Height="54"
+                    Background="#1D2129"
+                    BorderBrush="#30343D"
+                    BorderThickness="1"
+                    CornerRadius="27"
+                    HorizontalAlignment="Center">
+
+                            <TextBlock Text="✓"
+                           Foreground="#B8C0CC"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+                        </Border>
+
+
+                        <TextBlock Text="Enter your authentication code"
+                       Foreground="White"
+                       FontSize="19"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,20,0,0"/>
+
+                        <TextBlock Text="Enter the 6-digit code from your authenticator app to complete sign-in."
+                       Foreground="#9DA3AE"
+                       FontSize="13"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="430"
+                       HorizontalAlignment="Center"
+                       Margin="0,8,0,26"/>
+
+
+                        <!-- =================================================
+                 CODE INPUT
+                 ================================================= -->
+
+                        <TextBlock Text="AUTHENTICATION CODE"
+                       Foreground="#737A86"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,8"/>
+
+                        <TextBox x:Name="CodeTextBox"
+                     Style="{StaticResource AegisTextBox}"
+                     Width="230"
+                     Height="54"
+                     MaxLength="6"
+                     HorizontalAlignment="Center"
+                     HorizontalContentAlignment="Center"
+                     VerticalContentAlignment="Center"
+                     FontSize="23"
+                     FontWeight="SemiBold"
+                     InputScope="Number"/>
+
+
+                        <!-- =================================================
+                 STATUS
+                 ================================================= -->
+
+                        <Border x:Name="StatusBorder"
+                    Background="#1B1E25"
+                    BorderBrush="#30343D"
+                    BorderThickness="1"
+                    CornerRadius="7"
+                    Padding="14,11"
+                    Margin="0,18,0,0"
+                    Visibility="Collapsed">
+
+                            <TextBlock x:Name="StatusText"
+                           Foreground="#CCCCCC"
+                           FontSize="12"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"/>
+
+                        </Border>
+
+
+                        <!-- =================================================
+                 ACTIONS
+                 ================================================= -->
+
+                        <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Margin="0,22,0,0">
+
+                            <Button x:Name="CancelButton"
+                        Content="Cancel"
+                        Style="{StaticResource AegisButton}"
+                        Click="CancelButton_Click"
+                        Width="120"
+                        Height="44"
+                        Margin="0,0,10,0"/>
+
+                            <Button x:Name="ConfirmButton"
+                        Content="Verify &amp; Continue"
+                        Style="{StaticResource AegisButton}"
+                        Click="ConfirmButton_Click"
+                        Width="170"
+                        Height="44"/>
+
+                        </StackPanel>
+
+
+                        <!-- =================================================
+                 CODE INFORMATION
+                 ================================================= -->
+
+                        <TextBlock Text="The code changes every 30 seconds."
+                       Foreground="#666D78"
+                       FontSize="11"
+                       TextAlignment="Center"
+                       Margin="0,18,0,0"/>
+
+                    </StackPanel>
+
+                </Border>
+
+
+                <!-- =================================================
+         SECURITY NOTICE
+         ================================================= -->
+
+                <Border Background="#14171C"
+            BorderBrush="#242831"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="16"
+            Margin="0,20,0,0">
+
+                    <StackPanel Orientation="Horizontal">
+
+                        <TextBlock Text="ⓘ"
+                       Foreground="#8C94A1"
+                       FontSize="15"
+                       VerticalAlignment="Top"
+                       Margin="0,0,10,0"/>
+
+                        <TextBlock Text="Never share your authentication code. Aegis will never ask you to provide this code outside of the sign-in process."
+                       Foreground="#808793"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center"/>
+
+                    </StackPanel>
+
+                </Border>
+
+
+                <!-- =================================================
+         ACCOUNT CONTEXT
+         ================================================= -->
+
+                <TextBlock Text="Your sign-in will remain pending until verification is completed."
+               Foreground="#555C68"
+               FontSize="10"
+               TextAlignment="Center"
+               TextWrapping="Wrap"
+               Margin="20,18,20,0"/>
+
+            </StackPanel>
+
+        </ScrollViewer>
+
+
+        <!-- =========================================================
+ FOOTER
+ ========================================================= -->
+
+        <Border Grid.Row="2"
+    Padding="26,15"
+    BorderBrush="#252932"
+    BorderThickness="0,1,0,0">
+
+            <Grid>
+
+                <TextBlock Text="Aegis Security"
+               Foreground="#666D78"
+               FontSize="11"
+               HorizontalAlignment="Center"/>
+
+            </Grid>
+
+        </Border>
+
+    </Grid>
+
+
+</Window>
