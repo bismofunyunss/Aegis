@@ -1,5 +1,6 @@
 ﻿using Aegis.App.Crypto;
 using Aegis.App.Global;
+using Aegis.App.Vault.Services;
 using Aegis.App.Vault.VaultEntry;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -43,8 +44,8 @@ public partial class VaultPage : Page
 
         private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-        await VaultService.SaveVaultAsync(Session.Session.SessionManager.User.Username);
-    }
+            await VaultService.SaveVaultAsync();
+        }
 }
 
 

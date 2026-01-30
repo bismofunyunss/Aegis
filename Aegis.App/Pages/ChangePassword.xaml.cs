@@ -8,7 +8,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using Aegis.App.Password;
-using Aegis.App.PcrUtils;
 
 namespace Aegis.App.Pages
 {
@@ -45,7 +44,7 @@ namespace Aegis.App.Pages
         private async void Change_Click(object sender, RoutedEventArgs e)
         {
            await PasswordChangeService.ChangePasswordAsync(_username, CurrentPasswordBox.SecurePassword, NewPasswordBox.SecurePassword,
-                PcrSelection.Pcrs);
+                false);
         }
     }
 }

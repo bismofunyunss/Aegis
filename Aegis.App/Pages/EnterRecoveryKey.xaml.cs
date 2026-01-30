@@ -48,8 +48,7 @@ namespace Aegis.App.Pages
 
             recoveryKey.Dispose();
 
-            Session.Session.UserSession userSession = new Session.Session.UserSession(_username);
-            Session.Session.CryptoSession session = new Session.Session.CryptoSession(masterKey);
+            CryptoSession session = new CryptoSession(masterKey);
 
         }
 

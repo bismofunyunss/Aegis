@@ -1,5 +1,4 @@
-﻿using Aegis.App.Core;
-using Aegis.App.Crypto;
+﻿using Aegis.App.Crypto;
 using Aegis.App.Global;
 using Aegis.App.Helpers;
 using Aegis.App.Session;
@@ -62,15 +61,15 @@ namespace Aegis.App.Vault.VaultLoader
             var fileKeySalt = await HelperMethods.ReadExactAsync(encryptedVault, VaultConstants.SaltSize);
 
 
-            // Get active session (must already be logged in)
-            var session = CryptoSessionManager.Current;
-            if (session == null || !session.IsMasterKeyInitialized)
-                throw new SecurityException("No active crypto session.");
+            var crypto = Session.Session.GetCryptoSession();
+            if (crypto == null || !crypto.IsMasterKeyInitialized)
+                throw new SecurityException("Crypto session not initialized.");
 
-            // Derive file key
+            // ---- Derive file key ----
             using var fileKey = new FileKey(
+                crypto.MasterKey,
                 fileKeySalt,
-                "Vault-File-Key"u8,
+                "Vault-File-Key"u8.ToArray(),
                 64);
 
             var Keys = KeyDerivation.DeriveKeys(fileKey, CryptoMethods.SaltGenerator.CreateSalts(128));
