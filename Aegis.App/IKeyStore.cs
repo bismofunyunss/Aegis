@@ -1,6 +1,4 @@
 ﻿using Aegis.App.Core;
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Security;
 using System.Security.Cryptography;
@@ -17,7 +15,7 @@ public sealed class IKeyStore : IDisposable
 
     private readonly string _path;
     private readonly byte[] _hmacKey;
-    internal StoreModel _store;
+    private StoreModel _store;
     private bool _disposed;
 
     public TotpLockoutManager Lockout { get; }
@@ -46,6 +44,7 @@ public sealed class IKeyStore : IDisposable
     // =======================
     // 🔐 KeyBlob
     // =======================
+
     public void SaveKeyBlob(KeyBlob blob)
     {
         if (blob == null)
@@ -61,6 +60,7 @@ public sealed class IKeyStore : IDisposable
     // =======================
     // 🔑 TOTP
     // =======================
+
     public void AddTotpSecret(string account, byte[] protectedSecret, byte[] entropy)
     {
         _store.Totp = new TotpHex
@@ -70,6 +70,7 @@ public sealed class IKeyStore : IDisposable
             EntropyHex = Convert.ToHexString(entropy),
             LastUsedStep = -1
         };
+
         SaveInternal();
     }
 
@@ -78,20 +79,10 @@ public sealed class IKeyStore : IDisposable
         if (_store.Totp == null)
             throw new SecurityException("TOTP not enrolled");
 
-        byte[] protectedSecret = Convert.FromHexString(_store.Totp.SecretHex);
-        byte[] entropy = Convert.FromHexString(_store.Totp.EntropyHex);
-
-        try
-        {
-            return ProtectedData.Unprotect(
-                protectedSecret,
-                entropy,
-                DataProtectionScope.CurrentUser);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(entropy);
-        }
+        return ProtectedData.Unprotect(
+            Convert.FromHexString(_store.Totp.SecretHex),
+            Convert.FromHexString(_store.Totp.EntropyHex),
+            DataProtectionScope.CurrentUser);
     }
 
     public void UpdateTotpStep(long step)
@@ -104,8 +95,9 @@ public sealed class IKeyStore : IDisposable
     }
 
     // =======================
-    // 🔒 Persistence
+    // 🔒 Save / Load
     // =======================
+
     private void SaveInternal()
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(_store, JsonOptions);
@@ -147,31 +139,31 @@ public sealed class IKeyStore : IDisposable
                 Convert.FromHexString(envelope.HmacHex)))
             throw new SecurityException("Keystore integrity failure");
 
-        envelope.Data.Lockouts ??= new Dictionary<string, LockoutState>();
-        return envelope.Data;
+        return envelope.Data ?? new StoreModel();
     }
 
     // =======================
     // 🔒 Lockouts
     // =======================
+
     public sealed class TotpLockoutManager
     {
         private const int MaxFailures = 5;
         private static readonly TimeSpan BaseDelay = TimeSpan.FromSeconds(30);
 
-        private readonly IKeyStore _keystore;
+        private readonly IKeyStore _store;
         private readonly string _sid;
 
-        internal TotpLockoutManager(IKeyStore keystore)
+        internal TotpLockoutManager(IKeyStore store)
         {
-            _keystore = keystore;
+            _store = store;
             _sid = WindowsIdentity.GetCurrent().User!.Value;
 
-            if (!_keystore._store.Lockouts.ContainsKey(_sid))
-                _keystore._store.Lockouts[_sid] = new LockoutState();
+            if (!_store._store.Lockouts.ContainsKey(_sid))
+                _store._store.Lockouts[_sid] = new LockoutState();
         }
 
-        private LockoutState State => _keystore._store.Lockouts[_sid];
+        private LockoutState State => _store._store.Lockouts[_sid];
 
         public void EnsureNotLocked()
         {
@@ -190,31 +182,20 @@ public sealed class IKeyStore : IDisposable
                     DateTime.UtcNow + TimeSpan.FromSeconds(BaseDelay.TotalSeconds * level);
             }
 
-            _keystore.SaveInternal();
+            _store.SaveInternal();
         }
 
         public void Success()
         {
-            _keystore._store.Lockouts[_sid] = new LockoutState();
-            _keystore.SaveInternal();
-        }
-
-        public LockoutSnapshot GetSnapshot() => new()
-        {
-            Failures = State.Failures,
-            LockedUntilUtc = State.LockedUntilUtc
-        };
-
-        public sealed class LockoutSnapshot
-        {
-            public int Failures { get; init; }
-            public DateTime? LockedUntilUtc { get; init; }
+            _store._store.Lockouts[_sid] = new LockoutState();
+            _store.SaveInternal();
         }
     }
 
     // =======================
-    // Models
+    // 📦 Models (HEX ONLY)
     // =======================
+
     private sealed class KeystoreEnvelope
     {
         public int Version { get; set; }
@@ -222,20 +203,20 @@ public sealed class IKeyStore : IDisposable
         public StoreModel Data { get; set; } = new();
     }
 
-    internal sealed class StoreModel
+    private sealed class StoreModel
     {
         public KeyBlobHex? MasterKey { get; set; }
         public TotpHex? Totp { get; set; }
         public Dictionary<string, LockoutState> Lockouts { get; set; } = new();
     }
 
-    internal sealed class LockoutState
+    private sealed class LockoutState
     {
         public int Failures { get; set; }
         public DateTime? LockedUntilUtc { get; set; }
     }
 
-    internal sealed class TotpHex
+    private sealed class TotpHex
     {
         public string Account { get; set; } = "";
         public string SecretHex { get; set; } = "";
@@ -244,31 +225,28 @@ public sealed class IKeyStore : IDisposable
     }
 
     // =======================
-    // 🔐 KeyBlob HEX (FIXED)
+    // 🔑 KeyBlob HEX MODEL
     // =======================
-    internal sealed class KeyBlobHex
+
+    private sealed class KeyBlobHex
     {
-        public string LoginCiphertext { get; set; } = "";
-        public string LoginNonce { get; set; } = "";
-        public string LoginTag { get; set; } = "";
+        public string Ciphertext { get; set; } = "";
+        public string Tag { get; set; } = "";
+        public string Nonce { get; set; } = "";
         public string PasswordSalt { get; set; } = "";
         public string HelloSalt { get; set; } = "";
         public string SealedKek { get; set; } = "";
         public string PolicyDigest { get; set; } = "";
-        public uint[] Pcrs { get; set; } = Array.Empty<uint>();
+        public uint[] Pcrs { get; set; }
         public ulong NvCounter { get; set; }
         public string HkdfSalt { get; set; } = "";
-        public string PcrBaseLine { get; set; } = "";
-        public string PrivateBlob { get; set; } = "";
-        public string RecoveryCiphertext { get; set; } = "";
-        public string RecoveryNonce { get; set; } = "";
-        public string RecoveryTag { get; set; } = "";
+        public string Baseline { get; set; } = "";
 
         public static KeyBlobHex From(KeyBlob b) => new()
         {
-            LoginCiphertext = Convert.ToHexString(b.LoginCiphertext),
-            LoginNonce = Convert.ToHexString(b.LoginNonce),
-            LoginTag = Convert.ToHexString(b.LoginTag),
+            Ciphertext = Convert.ToHexString(b.Ciphertext),
+            Tag = Convert.ToHexString(b.Tag),
+            Nonce = Convert.ToHexString(b.Nonce),
             PasswordSalt = Convert.ToHexString(b.PasswordSalt),
             HelloSalt = Convert.ToHexString(b.HelloSalt),
             SealedKek = Convert.ToHexString(b.SealedKek),
@@ -276,36 +254,29 @@ public sealed class IKeyStore : IDisposable
             Pcrs = b.Pcrs,
             NvCounter = b.NvCounter,
             HkdfSalt = Convert.ToHexString(b.HkdfSalt),
-            PcrBaseLine = Convert.ToHexString(b.PcrBaseLine),
-            PrivateBlob = Convert.ToHexString(b.PrivateBlob),
-            RecoveryCiphertext = Convert.ToHexString(b.RecoveryCiphertext),
-            RecoveryNonce = Convert.ToHexString(b.RecoveryNonce),
-            RecoveryTag = Convert.ToHexString(b.RecoveryTag)
+            Baseline = Convert.ToHexString(b.PcrBaseLine)
         };
 
         public KeyBlob ToKeyBlob() => new()
         {
-            LoginCiphertext = Convert.FromHexString(LoginCiphertext),
-            LoginNonce = Convert.FromHexString(LoginNonce),
-            LoginTag = Convert.FromHexString(LoginTag),
+            Ciphertext = Convert.FromHexString(Ciphertext),
+            Tag = Convert.FromHexString(Tag),
+            Nonce = Convert.FromHexString(Nonce),
             PasswordSalt = Convert.FromHexString(PasswordSalt),
             HelloSalt = Convert.FromHexString(HelloSalt),
             SealedKek = Convert.FromHexString(SealedKek),
             PolicyDigest = Convert.FromHexString(PolicyDigest),
             Pcrs = Pcrs,
             NvCounter = NvCounter,
-            HkdfSalt = Convert.FromHexString(HkdfSalt),
-            PcrBaseLine = Convert.FromHexString(PcrBaseLine),
-            PrivateBlob = Convert.FromHexString(PrivateBlob),
-            RecoveryCiphertext = Convert.FromHexString(RecoveryCiphertext),
-            RecoveryNonce = Convert.FromHexString(RecoveryNonce),
-            RecoveryTag = Convert.FromHexString(RecoveryTag)
+            HkdfSalt= Convert.FromHexString(HkdfSalt),
+            PcrBaseLine = Convert.FromHexString(Baseline)
         };
     }
 
     // =======================
-    // Dispose
+    // ♻ Dispose
     // =======================
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -314,10 +285,5 @@ public sealed class IKeyStore : IDisposable
         GC.SuppressFinalize(this);
     }
 }
-
-
-
-
-
 
 

@@ -7,7 +7,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Tpm2Lib;
-using PcrSelection = Tpm2Lib.PcrSelection;
 
 namespace Aegis.App.TPM
 {

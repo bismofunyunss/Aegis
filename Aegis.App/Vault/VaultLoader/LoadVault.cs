@@ -1,16 +1,14 @@
 ﻿using Aegis.App.Crypto;
 using Aegis.App.Global;
-using Aegis.App.Helpers;
-using Aegis.App.Session;
-using Aegis.App.Vault.VaultEntry;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Aegis.App.Helpers;
+using Aegis.App.Vault.VaultEntry;
 using static Aegis.App.Pages.VaultPage;
 
 namespace Aegis.App.Vault.VaultLoader
@@ -25,10 +23,10 @@ namespace Aegis.App.Vault.VaultLoader
             public const int SaltSize = 128;
         }
 
-        public static async Task LoadVaultOnLoginAsync(string username, SecureMasterKey key)
+        public static async Task LoadVaultOnLoginAsync()
         {
             var vaultPath = Path.Combine(
-                IO.Folders.GetUserFolder(username),
+                IO.Folders.GetUserFolder(Session.Instance.Username!),
                 "vault.dat"
             );
 
@@ -46,10 +44,10 @@ namespace Aegis.App.Vault.VaultLoader
                 FileShare.Read
             );
 
-            await DecryptAndLoadVaultAsync(vaultFile, key);
+            await DecryptAndLoadVaultAsync(vaultFile);
         }
 
-        private static async Task DecryptAndLoadVaultAsync(Stream encryptedVault, SecureMasterKey key)
+        private static async Task DecryptAndLoadVaultAsync(Stream encryptedVault)
         {
             // ---- Read signature ----
             var sig = await HelperMethods.ReadExactAsync(encryptedVault, VaultConstants.Signature.Length);
@@ -60,19 +58,21 @@ namespace Aegis.App.Vault.VaultLoader
             // ---- Read file key salt ----
             var fileKeySalt = await HelperMethods.ReadExactAsync(encryptedVault, VaultConstants.SaltSize);
 
-
-            var crypto = Session.Session.GetCryptoSession();
-            if (crypto == null || !crypto.IsMasterKeyInitialized)
-                throw new SecurityException("Crypto session not initialized.");
+            if (Session.Instance.Crypto == null ||
+                Session.Instance.Crypto.MasterKey == null ||
+                !Session.Instance.Crypto.MasterKey.IsInitialized)
+            {
+                throw new InvalidOperationException("MasterKey is not initialized.");
+            }
 
             // ---- Derive file key ----
-            using var fileKey = new FileKey(
-                crypto.MasterKey,
+            var fileKey = Session.Instance.Crypto.MasterKey.DeriveKey(
                 fileKeySalt,
                 "Vault-File-Key"u8.ToArray(),
-                64);
+                64
+            );
 
-            var Keys = KeyDerivation.DeriveKeys(fileKey, CryptoMethods.SaltGenerator.CreateSalts(128));
+            var Keys = Session.Instance.Crypto.Keys;
 
             try
             {
@@ -94,7 +94,7 @@ namespace Aegis.App.Vault.VaultLoader
             }
             finally
             {
-                fileKey.Dispose();
+                MemoryHandling.Clear(fileKey);
                 MemoryHandling.Clear(fileKeySalt);
             }
         }
@@ -132,5 +132,6 @@ namespace Aegis.App.Vault.VaultLoader
 
             }
         }
+
     }
 }
