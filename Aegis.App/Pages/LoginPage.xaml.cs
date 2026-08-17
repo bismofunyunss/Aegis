@@ -1,21 +1,25 @@
 ﻿using Aegis.App;
 using Aegis.App.Controls;
+using Aegis.App.Core;
 using Aegis.App.Crypto;
 using Aegis.App.Global;
+using Aegis.App.Helpers;
 using Aegis.App.Interfaces;
 using Aegis.App.Login;
+using Aegis.App.Session;
+using Aegis.App.Vault.Services;
+using Aegis.App.Vault.VaultEntry;
+using Org.BouncyCastle.Crypto.Engines;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using Aegis.App.Helpers;
-using Aegis.App.Vault.Services;
-using Aegis.App.Vault.VaultEntry;
-using Org.BouncyCastle.Crypto.Engines;
+using Aegis.App.PcrUtils;
+using Aegis.App.SecureStringUtil;
+using Aegis.App.TPM;
 using WinRT;
 using static Aegis.App.Pages.VaultPage;
-using Aegis.App.Core;
 
 namespace Aegis.App.Pages;
 
@@ -24,6 +28,7 @@ namespace Aegis.App.Pages;
 /// </summary>
 public partial class LoginPage : Page, IWindowResizablePage
 {
+    private string _username;
     public LoginPage()
     {
         InitializeComponent();
@@ -36,35 +41,25 @@ public partial class LoginPage : Page, IWindowResizablePage
 
     private async void LoginButton_Click(object sender, RoutedEventArgs e)
     {
-        /*var username = UsernameBox.Text.Trim();
-        if (string.IsNullOrEmpty(username)) return;
+        _username = UsernameBox.Text.Trim();
+        if (string.IsNullOrEmpty(_username)) return;
 
         LoginButton.IsEnabled = false;
-        byte[]? masterKeyBytes = null;
-
+        byte[]? passwordBytes = null;
         try
         {
-            var loginService = new UserLoginService(username);
+            uint[] pcrs = { 0, 2, 4, 7, 11 };
+            TpmSealService tpmSealService = new TpmSealService(OpenTpm.CreateTpm2(), _username, PcrSelection.Pcrs);
+
+            var loginService = new UserLoginService(_username);
+            using var keystore = new IKeyStore(_username);
 
             // Obtain raw master key bytes from login
-            masterKeyBytes = await MasterKeyManager.CreateAndWrapMasterKeyAsync();
-            if (masterKeyBytes == null || masterKeyBytes.Length == 0)
+            var secureKey = await MasterKeyManager.LoginAndUnwrapMasterKeyAsync(tpmSealService, await WindowsHelloManager.GetHelloKeyAsync(_username), ToBytes.ToUtf8Bytes(PasswordBox.SecurePassword), _username, keystore.LoadKeyBlob(), pcrs);
+            if (secureKey == null || secureKey.Length == 0)
                 throw new InvalidOperationException("Failed to retrieve master key.");
 
-            // Dispose any previous SecureMasterKey safely
-            secureKey?.Dispose();
-
-            // Create new SecureMasterKey (pins and clones internally)
-            secureKey = new SecureMasterKey(masterKeyBytes);
-
-            // Immediately zero the original raw master key bytes
-            CryptographicOperations.ZeroMemory(masterKeyBytes);
-
-            // Initialize session CryptoSession with SecureMasterKey
-            Session.Instance.Crypto = new Session.CryptoSession(secureKey);
-
-            // Set username in session
-            Session.Instance.SetUser(username, masterKeyBytes);
+            Session.Session.Start(new UserSession(_username), new CryptoSession(secureKey));
 
             // Load and decrypt vault
             await LoadVaultOnLoginAsync();
@@ -72,7 +67,7 @@ public partial class LoginPage : Page, IWindowResizablePage
             // Update main window UI
             if (Application.Current.MainWindow is MainWindow mainWindow)
             {
-                mainWindow.RainbowWelcomeLabel.ShowUsername(username);
+                mainWindow.RainbowWelcomeLabel.ShowUsername(_username);
                 await mainWindow.TpmKeyStatus.ShowKeyStatusAsync();
             }
 
@@ -90,12 +85,7 @@ public partial class LoginPage : Page, IWindowResizablePage
         finally
         {
             LoginButton.IsEnabled = true;
-
-            // Extra precaution: clear raw masterKeyBytes reference
-            if (masterKeyBytes != null)
-                CryptographicOperations.ZeroMemory(masterKeyBytes);
         }
-        */
     }
 
 
@@ -111,7 +101,6 @@ public partial class LoginPage : Page, IWindowResizablePage
             mainWindow.RainbowWelcomeLabel.Visibility = Visibility.Hidden;
             mainWindow.TpmKeyStatus.Visibility = Visibility.Hidden;
 
-            Session.Instance.Clear();
         }
 
         LoginButton.IsEnabled = true;
@@ -121,7 +110,7 @@ public partial class LoginPage : Page, IWindowResizablePage
     public static async Task LoadVaultOnLoginAsync()
     {
         var vaultPath = Path.Combine(
-            IO.Folders.GetUserFolder(Session.Instance.Username!),
+            IO.Folders.GetUserFolder(Session.Session.GetUsername()!),
             "vault.dat"
         );
 
@@ -140,5 +129,11 @@ public partial class LoginPage : Page, IWindowResizablePage
         );
 
         await VaultService.LoadVaultAsync();
+    }
+
+    private void ForgotPasswordButton_Click(object sender, RoutedEventArgs e)
+    {
+        EnterRecoveryKey recoveryPage = new EnterRecoveryKey(_username);
+        recoveryPage.ShowDialog();
     }
 }

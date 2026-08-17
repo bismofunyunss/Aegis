@@ -15,7 +15,7 @@ namespace Aegis.App.Verification;
 public partial class TotpVerifyWindow
 {
     private CancellationTokenSource? _lockoutCts;
-    private readonly SoftwareKeyStore _store;
+    private readonly IKeyStore _store;
     private const int MaxAttempts = 5;
     private readonly byte[] _rawTotpSecret;
 
@@ -23,7 +23,7 @@ public partial class TotpVerifyWindow
     {
         InitializeComponent();
 
-        _store = new SoftwareKeyStore(Folders.GetUserFolder(username));
+        _store = new IKeyStore(username);
 
         if (rawTotpSecret != null)
         {
@@ -35,7 +35,7 @@ public partial class TotpVerifyWindow
         else
         {
             // Login: load secret from keystore, hide QR
-            _rawTotpSecret = _store.LoadTotpSecret(out _);
+            _rawTotpSecret = _store.LoadTotpSecret();
             QRCodeImage.Visibility = Visibility.Collapsed;
             this.Height -= 175;
         }
@@ -68,7 +68,7 @@ public partial class TotpVerifyWindow
 
     private void UpdateStatus()
     {
-        var snapshot = _store.GetLockoutSnapshot();
+        var snapshot = _store.Lockout.GetSnapshot();
 
         if (snapshot.LockedUntilUtc is { } until && DateTime.UtcNow < until)
         {
@@ -113,7 +113,7 @@ public partial class TotpVerifyWindow
                 throw new SecurityException("Replay attack detected.");
             }
 
-            _store.UpdateLastTotpStep(step);
+            _store.UpdateTotpStep(step);
             _store.Lockout.Success();
 
             DialogResult = true;

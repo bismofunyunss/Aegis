@@ -1,15 +1,16 @@
-﻿using System.IO;
+﻿using Aegis.App.Crypto;
+using Aegis.App.Global;
+using Aegis.App.Helpers;
+using Aegis.App.Interfaces;
+using Microsoft.Win32;
+using System.IO;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Aegis.App.Crypto;
-using Aegis.App.Global;
-using Aegis.App.Helpers;
-using Aegis.App.Interfaces;
-using Microsoft.Win32;
 using static Aegis.App.ParallelCtrEncryptor;
 using Path = System.IO.Path;
 
@@ -35,7 +36,7 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
 
     private void OpenFileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Session.Instance.Username == null)
+        if (Session.Session.GetUsername() == null)
             return;
 
         try
@@ -84,7 +85,7 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
 
     private async void EncryptFileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Session.Instance.Username == null)
+        if (Session.Session.GetUsername() == null)
             return;
 
         if (FileVars.Result == null)
@@ -223,7 +224,7 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
 
     private async void DecryptFileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Session.Instance.Username == null)
+        if (Session.Session.GetUsername() == null)
             return;
 
         if (FileVars.Result == null)
@@ -349,7 +350,7 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
 
     private async void SaveFileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Session.Instance.Username == null)
+        if (Session.Session.GetUsername() == null)
             return;
 
         try
@@ -501,25 +502,24 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
             inputStream.Position = 0;
         }
 
-        if (Session.Instance.Crypto == null ||
-            Session.Instance.Crypto.MasterKey == null ||
-            !Session.Instance.Crypto.MasterKey.IsInitialized)
-            throw new InvalidOperationException("MasterKey is not initialized.");
+        var crypto = Session.Session.GetCryptoSession();
+        if (crypto == null || !crypto.IsMasterKeyInitialized)
+            throw new SecurityException("Crypto session not initialized.");
 
 
         var fileKeySalt = RandomNumberGenerator.GetBytes(128);
-        var fileKey = Session.Instance.MasterKey.DeriveKey(fileKeySalt, "File-Encryption-Key"u8.ToArray(), 64);
-        var salts = CryptoMethods.SaltGenerator.CreateSalts(128);
+        using var fileKey = new FileKey(
+            crypto.MasterKey,
+            fileKeySalt,
+            "File-Encryption-Key"u8,
+            64); var salts = CryptoMethods.SaltGenerator.CreateSalts(128);
         var Keys = KeyDerivation.DeriveKeys(fileKey, salts);
-
-        var cryptoSalts = CryptoMethods.SaltGenerator.CreateSalts();
-        FileStream finalStream = null;
 
         try
         {
             // ---- Final output stream ----
             var finalTempPath = Path.GetTempFileName();
-            finalStream = new FileStream(
+            var finalStream = new FileStream(
                 finalTempPath,
                 FileMode.Create,
                 FileAccess.ReadWrite,
@@ -540,8 +540,8 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
             await finalStream.WriteAsync(fileKeySalt);
 
             // Write all 8 crypto salts
-            for (var i = 0; i < cryptoSalts.Length; i++)
-                await finalStream.WriteAsync(cryptoSalts[i]);
+            for (var i = 0; i < salts.Length; i++)
+                await finalStream.WriteAsync(salts[i]);
 
             // Write extension
             await finalStream.WriteAsync(new[] { (byte)extBytes.Length });
@@ -586,8 +586,9 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
 
         finally
         {
-            MemoryHandling.Clear(fileKeySalt, fileKey);
-            foreach (var salt in cryptoSalts)
+            MemoryHandling.Clear(fileKeySalt);
+            fileKey.Dispose();
+            foreach (var salt in salts)
                 MemoryHandling.Clear(salt);
             Keys?.Dispose();
         }
@@ -613,25 +614,25 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
         var fileKeySalt = await HelperMethods.ReadExactAsync(input, 128);
 
         // ---- 3. Re-derive file key ----
-        if (Session.Instance.Crypto == null ||
-            Session.Instance.Crypto.MasterKey == null ||
-            !Session.Instance.Crypto.MasterKey.IsInitialized)
-            throw new InvalidOperationException("MasterKey is not initialized.");
+        var crypto = Session.Session.GetCryptoSession();
+        if (crypto == null || !crypto.IsMasterKeyInitialized)
+            throw new SecurityException("Crypto session not initialized.");
 
-
-        var fileKey = Session.Instance.Crypto.MasterKey.DeriveKey(
-            fileKeySalt,
-            "File-Encryption-Key"u8.ToArray(),
-            64
+        // Create a FileKey from the master key and the stored salt
+        using var fileKey = new FileKey(
+            crypto.MasterKey,
+            fileKeySalt,                         // salt read from file
+            "File-Encryption-Key"u8.ToArray(),  // info
+            64                                   // desired length
         );
-
-        var salts = CryptoMethods.SaltGenerator.CreateSalts(128);
-        var Keys = KeyDerivation.DeriveKeys(fileKey, salts);
 
         // ---- 4. Read 8 crypto salts ----
         var cryptoSalts = new byte[8][];
         for (var i = 0; i < 8; i++)
             cryptoSalts[i] = await HelperMethods.ReadExactAsync(input, 128);
+
+        // ---- 5. Derive all keys for decryption ----
+        var Keys = KeyDerivation.DeriveKeys(fileKey, cryptoSalts);
 
         // ---- 5. Read extension ----
         var extLen = input.ReadByte();
@@ -671,9 +672,11 @@ public partial class FileEncryptionPage : Page, IWindowResizablePage
         FileVars.OriginalExtension = originalExtension;
 
         // ---- 11. Clear sensitive buffers ----
-        MemoryHandling.Clear(fileKey, fileKeySalt);
+        MemoryHandling.Clear(fileKeySalt);
+        fileKey.Dispose();
         foreach (var salt in cryptoSalts)
             MemoryHandling.Clear(salt);
+        Keys?.Dispose();
 
         return true;
     }

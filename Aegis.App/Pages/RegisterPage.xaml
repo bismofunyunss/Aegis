@@ -3,22 +3,24 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="clr-namespace:Aegis.App.Controls"
       Width="450"
-      Height="500"
       Background="{x:Null}">
 
     <Grid>
-        <!-- Centered container panel -->
+        <!-- Centered container panel, aligned slightly higher -->
         <Border Width="430"
-                Height="480"
                 Padding="20"
                 CornerRadius="12"
                 BorderBrush="#444"
                 BorderThickness="2"
                 HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Background="Transparent">
+                VerticalAlignment="Top"
+                Margin="0,30,0,0"
+            Background="Transparent">
             <Border.Effect>
-                <DropShadowEffect Color="#000000" BlurRadius="10" ShadowDepth="2" Opacity="0.4"/>
+                <DropShadowEffect Color="#000000"
+                                  BlurRadius="10"
+                                  ShadowDepth="2"
+                                  Opacity="0.4"/>
             </Border.Effect>
 
             <Grid>
@@ -41,8 +43,6 @@
                     <!-- Confirm Password Label -->
                     <RowDefinition Height="Auto"/>
                     <!-- Confirm PasswordBox -->
-                    <RowDefinition Height="*"/>
-                    <!-- Spacer -->
                     <RowDefinition Height="Auto"/>
                     <!-- Register Button -->
                 </Grid.RowDefinitions>
@@ -56,25 +56,21 @@
                            HorizontalAlignment="Center"
                            Margin="0,0,0,22"/>
 
-                <!-- Username Label -->
+                <!-- Username -->
                 <TextBlock Grid.Row="1"
                            Text="Username"
                            Foreground="White"
-                           Margin="0,0,0,8"/>
-
-                <!-- Username TextBox -->
+                           Margin="0,0,0,4"/>
                 <TextBox Grid.Row="2"
                          x:Name="UsernameBox"
                          Style="{StaticResource AegisTextBox}"
                          Height="34"/>
 
-                <!-- Password Label -->
+                <!-- Password -->
                 <TextBlock Grid.Row="3"
                            Text="Password"
                            Foreground="#888"
-                           Margin="0,12,0,8"/>
-
-                <!-- PasswordBox -->
+                           Margin="0,12,0,4"/>
                 <PasswordBox Grid.Row="4"
                              x:Name="PasswordBox"
                              Height="34"
@@ -84,7 +80,7 @@
                              BorderThickness="1"
                              PasswordChanged="PasswordBox_PasswordChanged"/>
 
-                <!-- Password Entropy Label -->
+                <!-- Password Strength -->
                 <TextBlock Grid.Row="5"
                            x:Name="PasswordEntropyLabel"
                            Foreground="#CCC"
@@ -92,8 +88,6 @@
                            Margin="0,6,0,2"
                            HorizontalAlignment="Left"
                            Text="Entropy: 0 bits"/>
-
-                <!-- Password Strength Bar -->
                 <ProgressBar Grid.Row="6"
                              x:Name="PasswordStrengthBar"
                              Height="10"
@@ -103,13 +97,11 @@
                              Minimum="0"
                              Maximum="1000"/>
 
-                <!-- Confirm Password Label -->
+                <!-- Confirm Password -->
                 <TextBlock Grid.Row="7"
                            Text="Confirm Password"
                            Foreground="#888"
-                           Margin="0,12,0,8"/>
-
-                <!-- Confirm PasswordBox -->
+                           Margin="0,12,0,4"/>
                 <PasswordBox Grid.Row="8"
                              x:Name="ConfirmPasswordBox"
                              Height="34"
@@ -118,23 +110,24 @@
                              BorderBrush="#444"
                              BorderThickness="1"/>
 
-                <!-- Spacer -->
-                <Grid Grid.Row="9"/>
-
                 <!-- Register Button -->
-                <Button Grid.Row="10"
+                <Button Grid.Row="9"
                         x:Name="RegisterButton"
                         Content="Register"
                         Style="{StaticResource AegisButton}"
                         Width="386"
                         Height="50"
                         HorizontalAlignment="Center"
-                        Margin="0,16,0,0"
+                        Margin="0,12,0,0"
                         Click="RegisterButton_Click"/>
             </Grid>
         </Border>
     </Grid>
 </Page>
+
+
+
+
 
 
 

@@ -1,15 +1,24 @@
-﻿using System;
+﻿using Aegis.App.Core;
+using Aegis.App.Crypto;
+using Aegis.App.TPM;
+using System;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows;
+using Aegis.App.Password;
 
 namespace Aegis.App.Pages
 {
     public partial class ChangePassword : Window
     {
-        public ChangePassword()
+        private string _username;
+        private byte[] _password;
+        public ChangePassword(string username)
         {
             InitializeComponent();
+            _username = username;
         }
 
         private void PasswordChanged(object sender, RoutedEventArgs e)
@@ -17,13 +26,14 @@ namespace Aegis.App.Pages
             SecureString pwd = NewPasswordBox.SecurePassword;
             SecureString confirm = ConfirmPasswordBox.SecurePassword;
 
-            var (isValid, entropy) =
-                PasswordUtilities.CheckPasswordAndComputeEntropy(pwd, confirm);
+            var entropy=
+                PasswordUtilities.ComputeEntropyOnly(pwd);
 
             EntropyText.Text = $"Entropy: {(int)entropy} bits";
             EntropyProgress.Value = Math.Min(entropy, EntropyProgress.Maximum);
 
-            ChangeButton.IsEnabled = isValid && entropy >= 80;
+            var passwordPolicy = PasswordUtilities.ValidatePasswordPolicy(pwd, confirm);
+            ChangeButton.IsEnabled = PasswordUtilities.SecureEquals(pwd, confirm) && passwordPolicy && entropy >= 80;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -31,17 +41,10 @@ namespace Aegis.App.Pages
             Close();
         }
 
-        private void Change_Click(object sender, RoutedEventArgs e)
+        private async void Change_Click(object sender, RoutedEventArgs e)
         {
-            // You already have this flow planned:
-            // 1. Unseal master key
-            // 2. Re-derive password KEK
-            // 3. Rewrap master key
-            // 4. Zero all intermediates
-            // 5. Persist updated KeyBlob
-
-            DialogResult = true;
-            Close();
+           await PasswordChangeService.ChangePasswordAsync(_username, CurrentPasswordBox.SecurePassword, NewPasswordBox.SecurePassword,
+                false);
         }
     }
 }
