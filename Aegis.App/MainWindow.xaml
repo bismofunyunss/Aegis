@@ -32,11 +32,8 @@
         <SolidColorBrush x:Key="MenuForeground"
                      Color="#F2F2F2"/>
 
-        <SolidColorBrush x:Key="MenuSecondaryForeground"
-                     Color="#A0A0A0"/>
-
         <SolidColorBrush x:Key="ContentBackground"
-                     Color="#1E1E1E"/>
+                         Color="#1E1E1E"/>
 
         <!-- ========================================================= -->
         <!-- HAMBURGER BUTTON -->

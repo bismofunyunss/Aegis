@@ -61,9 +61,9 @@ namespace Aegis.App.Vault
     #endregion
 
     #region RamCryptoSession
-    public sealed partial class RamCryptoSession : IDisposable
+    public sealed class RamCryptoSession : IDisposable
     {
-        private SecureBuffer _key;
+        private readonly SecureBuffer _key;
 
         public RamCryptoSession(byte[] key) => _key = new SecureBuffer(key);
         private Span<byte> Key => _key.AsSpan();
