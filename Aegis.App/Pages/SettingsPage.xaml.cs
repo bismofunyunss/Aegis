@@ -1,6 +1,7 @@
-﻿using System.Windows;
+﻿using Aegis.App.Crypto;
+using System.Windows;
 using System.Windows.Controls;
-using Xceed.Wpf.Toolkit;
+using Aegis.App.Argon2_Optimization;
 
 namespace Aegis.App.Pages
 {
@@ -29,10 +30,14 @@ namespace Aegis.App.Pages
         {
             _isLoading = true;
 
-            // Load existing values from Settings.Default
             Pbkdf2IterationsUpDown.Value = Settings.Default.PBKF2;
             Argon2IterationsUpDown.Value = Settings.Default.Iterations;
-            Argon2MemoryUpDown.Value = (int)Settings.Default.Memory;
+
+            int memory = Math.Max(1024, (int)Settings.Default.Memory);
+
+            Settings.Default.Memory = memory;
+            Argon2MemoryUpDown.Value = memory;
+
             Argon2ParallelismUpDown.Value = Settings.Default.Parallelism;
             UseFipsModeCheckBox.IsChecked = Settings.Default.FIPS;
 
@@ -94,7 +99,67 @@ namespace Aegis.App.Pages
             Settings.Default.FIPS = UseFipsModeCheckBox.IsChecked == true;
             Save();
         }
+
+        private async void OptimizeArgon2Button_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            OptimizeArgon2Button.IsEnabled =
+                false;
+
+            Argon2OptimizationStatusText.Text =
+                "Benchmarking your system...";
+
+            try
+            {
+                var result =
+                    await Task.Run(
+                        () => Argon2Optimizer.Optimize());
+
+                Argon2IterationsUpDown.Value =
+                    result.Iterations;
+
+                Argon2MemoryUpDown.Value =
+                    result.MemoryMiB;
+
+                Argon2ParallelismUpDown.Value =
+                    result.Parallelism;
+
+                Settings.Default.Save();
+
+                Argon2OptimizationStatusText.Text =
+                    $"Optimized: " +
+                    $"{result.MemoryMiB:N0} MiB, " +
+                    $"{result.Iterations} iterations, " +
+                    $"{result.Parallelism} lanes, " +
+                    $"{result.MeasuredMilliseconds:N0} ms.";
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log(
+                    ex,
+                    "Argon2id optimization failed.",
+                    ClientSessionManager.IsAuthenticated
+                        ? ClientSessionManager.Current.Username
+                        : "Unknown");
+
+                Argon2OptimizationStatusText.Text =
+                    "Optimization failed.";
+
+                MessageBox.Show(
+                    "Argon2id optimization could not be completed.",
+                    "Optimization Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                OptimizeArgon2Button.IsEnabled =
+                    true;
+            }
+        }
     }
 }
+
 
 

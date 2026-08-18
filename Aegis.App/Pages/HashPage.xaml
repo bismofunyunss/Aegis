@@ -1,109 +1,373 @@
-﻿<Page x:Class="Aegis.App.Pages.HashPage"
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:controls="clr-namespace:Aegis.App.Controls"
-      Width="900"
-      Height="500"
-      Background="{x:Null}">
+﻿<Page
+ x:Class="Aegis.App.Pages.HashPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Background="#121212">
 
     <Grid>
-        <!-- Main centered panel -->
-        <Border Width="860"
-                Height="Auto"
-                Padding="24"
-                CornerRadius="12"
-                BorderBrush="#444"
-                BorderThickness="2"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Background="Transparent">
+
+        <!-- ========================================================= -->
+        <!-- MAIN CARD -->
+        <!-- ========================================================= -->
+
+        <Border
+        Width="680"
+        MaxWidth="680"
+        Padding="22"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Background="#1B1B1B"
+        BorderBrush="#303030"
+        BorderThickness="1"
+        CornerRadius="12">
+
             <Border.Effect>
-                <DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="4" Opacity="0.5"/>
+                <DropShadowEffect
+                BlurRadius="20"
+                ShadowDepth="4"
+                Opacity="0.30"/>
             </Border.Effect>
 
+
             <Grid>
+
                 <Grid.RowDefinitions>
+
+                    <!-- Header -->
                     <RowDefinition Height="Auto"/>
-                    <!-- Title -->
+
+                    <!-- Algorithm -->
                     <RowDefinition Height="Auto"/>
-                    <!-- ComboBox -->
+
+                    <!-- File -->
                     <RowDefinition Height="Auto"/>
-                    <!-- Buttons -->
-                    <RowDefinition Height="*"/>
-                    <!-- Hash Output -->
+
+                    <!-- Actions -->
                     <RowDefinition Height="Auto"/>
-                    <!-- Bottom Welcome + TPM -->
+
+                    <!-- Result -->
+                    <RowDefinition Height="Auto"/>
+
                 </Grid.RowDefinitions>
 
-                <!-- Title -->
-                <TextBlock Grid.Row="0"
-                           Text="File Hasher"
-                           Foreground="White"
-                           FontSize="26"
-                           FontWeight="Bold"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,20"/>
 
-                <!-- Hash Algorithm Selection (on top) -->
-                <StackPanel Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,0,0,20">
-                    <TextBlock Text="Select Hash Algorithm:"
-                               Foreground="White"
-                               Margin="0,0,0,8"
-                               HorizontalAlignment="Center"/>
-                    <ComboBox x:Name="HashAlgorithmComboBox"
-                              Width="250"
-                              Height="36">
-                        <ComboBoxItem Content="MD5"/>
-                        <ComboBoxItem Content="SHA-1"/>
-                        <ComboBoxItem Content="SHA-256"/>
-                        <ComboBoxItem Content="SHA-384"/>
-                        <ComboBoxItem Content="SHA-512"/>
-                        <ComboBoxItem Content="SHA3-256"/>
-                        <ComboBoxItem Content="SHA3-384"/>
-                        <ComboBoxItem Content="SHA3-512"/>
-                    </ComboBox>
-                </StackPanel>
+                <!-- ================================================= -->
+                <!-- HEADER -->
+                <!-- ================================================= -->
 
-                <!-- Open File + Compute Hash Buttons stacked -->
-                <StackPanel Grid.Row="2" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,0,0,20">
-                    <Button x:Name="OpenFileButton"
-                            Content="Open File"
-                            Style="{StaticResource AegisButton}"
-                            Width="386"
-                            Height="50"
-                            Margin="0,0,0,12"
-                            Click="OpenFileButton_Click"/>
-                    <Button x:Name="ComputeHashButton"
-                            Content="Compute Hash"
-                            Style="{StaticResource AegisButton}"
-                            Width="386"
-                            Height="50"
-                            Click="ComputeHashButton_Click"/>
-                </StackPanel>
+                <Grid
+                Grid.Row="0"
+                Margin="0,0,0,20">
 
-                <!-- Hash Output TextBox -->
-                <TextBox Grid.Row="3"
-                         x:Name="HashOutputTextBox"
-                         IsReadOnly="True"
-                         TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto"
-                         Background="#2A2A2A"
-                         Foreground="DodgerBlue"
-                         FontFamily="Consolas"
-                         FontSize="14"
-                         Padding="8"
-                         Margin="0,0,0,20"/>
-
-                <!-- Bottom Welcome + TPM -->
-                <Grid Grid.Row="4" Margin="0,12,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+
+
+                    <StackPanel>
+
+                        <TextBlock
+                        Text="FILE HASHER"
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Foreground="White"/>
+
+                        <TextBlock
+                        Text="Generate and verify cryptographic file hashes"
+                        FontSize="11"
+                        Foreground="#777777"
+                        Margin="0,3,0,0"/>
+
+                    </StackPanel>
+
+
+                    <!-- Utility indicator -->
+
+                    <Border
+                    Grid.Column="1"
+                    Padding="8,4"
+                    VerticalAlignment="Center"
+                    Background="#202020"
+                    BorderBrush="#343434"
+                    BorderThickness="1"
+                    CornerRadius="6">
+
+                        <TextBlock
+                        Text="HASH"
+                        FontSize="9"
+                        FontWeight="SemiBold"
+                        Foreground="#8AA4C8"/>
+
+                    </Border>
+
                 </Grid>
+
+
+                <!-- ================================================= -->
+                <!-- HASH ALGORITHM -->
+                <!-- ================================================= -->
+
+                <Border
+                Grid.Row="1"
+                Margin="0,0,0,14"
+                Padding="14"
+                Background="#202020"
+                BorderBrush="#303030"
+                BorderThickness="1"
+                CornerRadius="8">
+
+                    <Grid>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="250"/>
+                        </Grid.ColumnDefinitions>
+
+
+                        <StackPanel
+                        VerticalAlignment="Center">
+
+                            <TextBlock
+                            Text="HASH ALGORITHM"
+                            FontSize="9"
+                            FontWeight="SemiBold"
+                            Foreground="#707070"/>
+
+                            <TextBlock
+                            Text="Select the cryptographic algorithm used to generate the digest."
+                            FontSize="10"
+                            Foreground="#888888"
+                            Margin="0,3,0,0"/>
+
+                        </StackPanel>
+
+
+                        <ComboBox
+                            x:Name="HashAlgorithmComboBox"
+                            Grid.Column="1"
+                            Height="36"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource AegisComboBox}">
+
+                            <ComboBoxItem Content="MD5"/>
+                            <ComboBoxItem Content="SHA-1"/>
+                            <ComboBoxItem Content="SHA-256"/>
+                            <ComboBoxItem Content="SHA-384"/>
+                            <ComboBoxItem Content="SHA-512"/>
+                            <ComboBoxItem Content="SHA3-256"/>
+                            <ComboBoxItem Content="SHA3-384"/>
+                            <ComboBoxItem Content="SHA3-512"/>
+
+                        </ComboBox>
+
+
+
+                    </Grid>
+
+                </Border>
+
+
+                <!-- ================================================= -->
+                <!-- FILE SELECTION -->
+                <!-- ================================================= -->
+
+                <Border
+                Grid.Row="2"
+                Height="92"
+                Margin="0,0,0,14"
+                Padding="16"
+                Background="#202020"
+                BorderBrush="#303030"
+                BorderThickness="1"
+                CornerRadius="8"
+                AllowDrop="True"
+                DragOver="FileDropZone_DragOver"
+                Drop="FileDropZone_Drop">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+
+                        <TextBlock
+                        Grid.Row="0"
+                        Text="FILE"
+                        FontSize="9"
+                        FontWeight="SemiBold"
+                        Foreground="#707070"
+                        HorizontalAlignment="Center"/>
+
+
+                        <TextBlock
+                        x:Name="SelectedFileText"
+                        Grid.Row="1"
+                        Text="No file selected"
+                        FontSize="12"
+                        Foreground="#B5B5B5"
+                        HorizontalAlignment="Center"
+                        Margin="0,8,0,0"
+                        TextTrimming="CharacterEllipsis"/>
+
+                    </Grid>
+
+                </Border>
+
+
+                <!-- ================================================= -->
+                <!-- ACTIONS -->
+                <!-- ================================================= -->
+
+                <Border
+                Grid.Row="3"
+                Margin="0,0,0,14"
+                Padding="12"
+                Background="#202020"
+                BorderBrush="#303030"
+                BorderThickness="1"
+                CornerRadius="8">
+
+                    <Grid>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+
+                        <Button
+                        x:Name="OpenFileButton"
+                        Grid.Column="0"
+                        Height="40"
+                        Margin="4"
+                        Content="Open File"
+                        Style="{StaticResource AegisButton}"
+                        Click="OpenFileButton_Click"/>
+
+
+                        <Button
+                        x:Name="ComputeHashButton"
+                        Grid.Column="1"
+                        Height="40"
+                        Margin="4"
+                        Content="Compute Hash"
+                        Style="{StaticResource AegisButton}"
+                        Click="ComputeHashButton_Click"/>
+
+                    </Grid>
+
+                </Border>
+
+
+                <!-- ================================================= -->
+                <!-- HASH RESULT -->
+                <!-- ================================================= -->
+
+                <Border
+                Grid.Row="4"
+                Padding="14"
+                Background="#202020"
+                BorderBrush="#303030"
+                BorderThickness="1"
+                CornerRadius="8">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+
+                        <!-- Result header -->
+
+                        <Grid
+                        Grid.Row="0"
+                        Margin="0,0,0,8">
+
+                            <TextBlock
+                            Text="HASH RESULT"
+                            FontSize="9"
+                            FontWeight="SemiBold"
+                            Foreground="#707070"/>
+
+                            <TextBlock
+                            x:Name="HashAlgorithmStatusText"
+                            HorizontalAlignment="Right"
+                            Text="SHA-256"
+                            FontSize="9"
+                            Foreground="#777777"/>
+
+                        </Grid>
+
+
+                        <!-- Hash -->
+
+                        <TextBox
+                        x:Name="HashOutputTextBox"
+                        Grid.Row="1"
+                        MinHeight="72"
+                        MaxHeight="120"
+                        Padding="10"
+                        IsReadOnly="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled"
+                        Background="#181818"
+                        Foreground="#78AFFF"
+                        BorderBrush="#303030"
+                        BorderThickness="1"
+                        FontFamily="Consolas"
+                        FontSize="12"
+                        CaretBrush="Transparent"
+                        IsTabStop="True"/>
+
+
+                        <!-- Result status -->
+
+                        <Grid
+                        Grid.Row="2"
+                        Margin="0,8,0,0">
+
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+
+                            <Ellipse
+                            x:Name="HashStatusDot"
+                            Width="7"
+                            Height="7"
+                            Fill="#666666"
+                            VerticalAlignment="Center"
+                            Margin="0,0,7,0"/>
+
+
+                            <TextBlock
+                            x:Name="HashStatusText"
+                            Grid.Column="1"
+                            Text="Waiting for file"
+                            FontSize="10"
+                            Foreground="#777777"
+                            VerticalAlignment="Center"/>
+
+                        </Grid>
+
+                    </Grid>
+
+                </Border>
+
             </Grid>
+
         </Border>
+
     </Grid>
+
 </Page>
 
 

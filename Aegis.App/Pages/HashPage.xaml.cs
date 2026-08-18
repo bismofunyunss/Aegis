@@ -1,169 +1,201 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
+﻿using System.IO;
 using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
+using Aegis.App.Crypto;
 using Aegis.App.Interfaces;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Crypto.Digests;
+using Microsoft.Win32;
 
-namespace Aegis.App.Pages
+namespace Aegis.App.Pages;
+
+/// <summary>
+///     Interaction logic for HashPage.xaml
+/// </summary>
+public partial class HashPage : Page, IWindowResizablePage
 {
-    /// <summary>
-    /// Interaction logic for HashPage.xaml
-    /// </summary>
-    public partial class HashPage : Page, IWindowResizablePage
+    private string selectedFilePath;
+
+    public HashPage()
     {
-        
-        public HashPage()
+        InitializeComponent();
+    }
+
+    public double DesiredWidth => 975; // width for this page
+    public double DesiredHeight => 530; // height for this page
+
+    private void OpenFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var openFileDialog = new OpenFileDialog
         {
-            InitializeComponent();
+            Title = "Select File to Hash",
+            Filter = "All Files (*.*)|*.*"
+        };
+
+        var result = openFileDialog.ShowDialog();
+
+        if (result == true)
+        {
+            selectedFilePath = openFileDialog.FileName;
+            // Optional: show file name somewhere (maybe in the button or a label)
+            MessageBox.Show($"File selected:\n{selectedFilePath}", "File Selected", MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
+    }
 
-        public double DesiredWidth => 975; // width for this page
-        public double DesiredHeight => 530; // height for this page
-        private string selectedFilePath = null;
+    public void FileDropZone_Drop(object sender, DragEventArgs e)
+    {
+        if (!ClientSessionManager.IsAuthenticated)
+            return;
 
-        private void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        try
         {
-            var openFileDialog = new Microsoft.Win32.OpenFileDialog()
-            {
-                Title = "Select File to Hash",
-                Filter = "All Files (*.*)|*.*"
-            };
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+                return;
 
-            bool? result = openFileDialog.ShowDialog();
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
 
-            if (result == true)
-            {
-                selectedFilePath = openFileDialog.FileName;
-                // Optional: show file name somewhere (maybe in the button or a label)
-                MessageBox.Show($"File selected:\n{selectedFilePath}", "File Selected", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
+            if (files.Length == 0)
+                return;
 
-        private void ComputeHashButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(selectedFilePath))
+            var file = files[0];
+
+            var info = new FileInfo(file);
+
+            if (!info.Exists)
+                return;
+
+            if (info.Length == 0)
             {
-                MessageBox.Show("Please select a file first.", "No File", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(
+                    "File is empty.",
+                    "Warning",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
                 return;
             }
 
-            if (HashAlgorithmComboBox.SelectedItem is not ComboBoxItem selectedItem)
-                return;
-
-            string algorithm = selectedItem.Content.ToString();
-
-            try
-            {
-                string hash = ComputeFileHash(selectedFilePath, algorithm);
-                HashOutputTextBox.Text = hash;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error computing hash:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            selectedFilePath = info.Name;
         }
-
-        private string ComputeFileHash(string filePath, string algorithm)
+        catch (Exception ex)
         {
-            if (!File.Exists(filePath))
-                throw new FileNotFoundException("File not found", filePath);
+            MessageBox.Show(
+                ex.Message,
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
 
-            // MD5 / SHA1 / SHA256 / SHA384 / SHA512
-            switch (algorithm.ToUpper())
-            {
-                case "MD5":
-                    using (var md5 = MD5.Create())
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        var hash = md5.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
+    private void FileDropZone_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            e.Effects = DragDropEffects.Copy;
+        else
+            e.Effects = DragDropEffects.None;
 
-                case "SHA-1":
-                    using (var sha1 = SHA1.Create())
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        var hash = sha1.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
+        e.Handled = true;
+    }
 
-                case "SHA-256":
-                    using (var sha256 = SHA256.Create())
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        var hash = sha256.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
-
-                case "SHA-384":
-                    using (var sha384 = SHA384.Create())
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        var hash = sha384.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
-
-                case "SHA-512":
-                    using (var sha512 = SHA512.Create())
-                    using (var stream = File.OpenRead(filePath))
-                    {
-                        var hash = sha512.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
-
-                case "SHA3-256":
-                    return ComputeSha3Hash(filePath, 256);
-
-                case "SHA3-384":
-                    return ComputeSha3Hash(filePath, 384);
-
-                case "SHA3-512":
-                    return ComputeSha3Hash(filePath, 512);
-
-                default:
-                    throw new NotSupportedException($"Hash algorithm {algorithm} is not supported.");
-            }
+    private void ComputeHashButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(selectedFilePath))
+        {
+            MessageBox.Show("Please select a file first.", "No File", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
         }
 
-        private string ComputeSha3Hash(string filePath, int bitSize)
-            {
-                IDigest digest = bitSize switch
-                {
-                    256 => new Sha3Digest(256),
-                    384 => new Sha3Digest(384),
-                    512 => new Sha3Digest(512),
-                    _ => throw new ArgumentException("Invalid SHA3 bit size.")
-                };
+        if (HashAlgorithmComboBox.SelectedItem is not ComboBoxItem selectedItem)
+            return;
 
-                byte[] buffer = new byte[8192];
+        var algorithm = selectedItem.Content.ToString();
+
+        try
+        {
+            var hash = ComputeFileHash(selectedFilePath, algorithm);
+            HashOutputTextBox.Text = hash;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error computing hash:\n{ex.Message}", "Error", MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private string ComputeFileHash(string filePath, string algorithm)
+    {
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException("File not found", filePath);
+
+        // MD5 / SHA1 / SHA256 / SHA384 / SHA512
+        switch (algorithm.ToUpper())
+        {
+            case "MD5":
+                using (var md5 = MD5.Create())
                 using (var stream = File.OpenRead(filePath))
                 {
-                    int bytesRead;
-                    while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        digest.BlockUpdate(buffer, 0, bytesRead);
-                    }
+                    var hash = md5.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
                 }
 
-                byte[] result = new byte[digest.GetDigestSize()];
-                digest.DoFinal(result, 0);
-                return BitConverter.ToString(result).Replace("-", "").ToLowerInvariant();
-            }
+            case "SHA-1":
+                using (var sha1 = SHA1.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha1.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
 
+            case "SHA-256":
+                using (var sha256 = SHA256.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha256.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            case "SHA-384":
+                using (var sha384 = SHA384.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha384.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            case "SHA-512":
+                using (var sha512 = SHA512.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha512.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            case "SHA3-256":
+                using (var sha3256 = SHA3_256.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha3256.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            case "SHA3-384":
+                using (var sha3384 = SHA3_384.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha3384.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            case "SHA3-512":
+                using (var sha3512 = SHA3_512.Create())
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha3512.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+
+            default:
+                throw new NotSupportedException($"Hash algorithm {algorithm} is not supported.");
+        }
     }
 }

@@ -1,112 +1,323 @@
-﻿using Aegis.App.Crypto;
-using Aegis.App.Global;
-using Aegis.App.Interfaces;
-using Aegis.App.Registration;
-using System.Runtime.InteropServices;
+﻿using Aegis.App.IO;
+using Aegis.App.Ipc;
+using Aegis.App.SecureStringUtil;
+using Aegis.App.Verification;
 using System.Security;
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Aegis.App.PcrUtils;
 
-namespace Aegis.App.Pages
+namespace Aegis.App.Pages;
+
+public partial class RegisterPage :
+    Page,
+    IWindowResizablePage
 {
-    public partial class RegisterPage : Page, IWindowResizablePage
-    {
-        public double DesiredWidth => 550;   // width for this page
-        public double DesiredHeight => 500;  // height for this page
+    public double DesiredWidth =>
+        550;
 
-        private const double MinEntropyBits = 80;
-        private const double OptimalEntropyBits = 100;
-        public RegisterPage()
+    public double DesiredHeight =>
+        500;
+
+    private const double MinEntropyBits =
+        80;
+
+    private const double OptimalEntropyBits =
+        100;
+
+
+    public RegisterPage()
+    {
+        InitializeComponent();
+    }
+
+
+    // =========================================================
+    // PASSWORD STRENGTH
+    // =========================================================
+
+    private void PasswordBox_PasswordChanged(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var pwdSecure =
+            PasswordBox.SecurePassword;
+
+        if (pwdSecure == null ||
+            pwdSecure.Length == 0)
         {
-            InitializeComponent();
+            PasswordStrengthBar.Value =
+                0;
+
+            PasswordEntropyLabel.Text =
+                "Entropy: 0 bits";
+
+            PasswordStrengthBar.Foreground =
+                Brushes.OrangeRed;
+
+            return;
         }
 
-        private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
-        {
-            var pwdSecure = PasswordBox.SecurePassword;
+        double entropy =
+            PasswordUtilities.ComputeEntropyOnly(
+                pwdSecure);
 
-            if (pwdSecure == null || pwdSecure.Length == 0)
+        PasswordStrengthBar.Value =
+            entropy;
+
+        PasswordEntropyLabel.Text =
+            $"Entropy: {Math.Round(entropy, 1)} bits";
+
+        if (entropy < MinEntropyBits)
+        {
+            PasswordStrengthBar.Foreground =
+                Brushes.OrangeRed;
+        }
+        else if (entropy < OptimalEntropyBits)
+        {
+            PasswordStrengthBar.Foreground =
+                Brushes.Gold;
+        }
+        else
+        {
+            PasswordStrengthBar.Foreground =
+                Brushes.LimeGreen;
+        }
+    }
+
+
+    // =========================================================
+    // REGISTER BUTTON
+    // =========================================================
+
+    private async void RegisterButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            await RegisterAsync();
+        }
+        catch (CryptographicException ex)
+        {
+            FileLogger.Log(
+                ex,
+                "A cryptographic error occurred during registration.",
+                UsernameBox.Text.Trim());
+
+            MessageBox.Show(
+                "A cryptographic error occurred.",
+                "Registration Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch (SecurityException ex)
+        {
+            FileLogger.Log(
+                ex,
+                "A security error occurred during registration.",
+                UsernameBox.Text.Trim());
+
+            MessageBox.Show(
+                "A security error occurred.",
+                "Security Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch (JsonException ex)
+        {
+            FileLogger.Log(
+                ex,
+                "An invalid JSON response was received during registration.",
+                UsernameBox.Text.Trim());
+
+            MessageBox.Show(
+                "The registration response was invalid.",
+                "Registration Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch (TimeoutException ex)
+        {
+            FileLogger.Log(
+                ex,
+                "Registration timed out.",
+                UsernameBox.Text.Trim());
+
+            MessageBox.Show(
+                "The registration service did not respond in time.",
+                "Registration Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Log(
+                ex,
+                "An unexpected error occurred during registration.",
+                UsernameBox.Text.Trim());
+
+            MessageBox.Show(
+                "Registration failed. Please try again.",
+                "Registration Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+
+    // =========================================================
+    // REGISTRATION WORKFLOW
+    // =========================================================
+
+    private async Task RegisterAsync()
+    {
+        string username =
+            UsernameBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(
+                username))
+        {
+            return;
+        }
+
+        var password =
+            PasswordBox.SecurePassword;
+
+        var confirmPassword =
+            ConfirmPasswordBox.SecurePassword;
+
+        byte[]? passwordBytes =
+            null;
+
+        try
+        {
+            // =================================================
+            // PASSWORD POLICY
+            // =================================================
+
+            if (!PasswordUtilities.ValidatePasswordPolicy(
+                    password,
+                    confirmPassword))
             {
-                PasswordStrengthBar.Value = 0;
-                PasswordEntropyLabel.Text = "Entropy: 0 bits";
-                PasswordStrengthBar.Foreground = Brushes.OrangeRed;
+                MessageBox.Show(
+                    "Password must be 12-64 characters, include uppercase, lowercase, number, special character, and match confirmation.",
+                    "Invalid Password",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
                 return;
             }
 
-            // Compute entropy
-            double entropy = PasswordUtilities.ComputeEntropyOnly(pwdSecure);
+            RegisterButton.IsEnabled =
+                false;
 
-            // Update progress bar and label
-            PasswordStrengthBar.Value = entropy;
-            PasswordEntropyLabel.Text = $"Entropy: {Math.Round(entropy, 1)} bits";
+            // =================================================
+            // PASSWORD CONVERSION
+            // =================================================
 
-            // Color the bar according to zones
-            if (entropy < MinEntropyBits)
-                PasswordStrengthBar.Foreground = Brushes.OrangeRed; // below minimum
-            else if (entropy < OptimalEntropyBits)
-                PasswordStrengthBar.Foreground = Brushes.Gold;      // warning
-            else
-                PasswordStrengthBar.Foreground = Brushes.LimeGreen; // optimal
-        }
+            passwordBytes =
+                ToBytes.ToUtf8Bytes(
+                    password);
 
-        private async void RegisterButton_Click(object sender, RoutedEventArgs e)
-        {
-            string username = UsernameBox.Text.Trim();
+            // =================================================
+            // REGISTER ACCOUNT
+            // =================================================
 
-            var password = PasswordBox.SecurePassword;
-            var confirmPassword = ConfirmPasswordBox.SecurePassword;
+            var enrollment =
+                await AppServices.Core.RegisterAsync(
+                    passwordBytes,
+                    PcrSelection.Pcrs,
+                    username);
 
-            byte[]? passwordBytes = null;
+            // =================================================
+            // TOTP ENROLLMENT
+            // =================================================
 
-            try
+            var totpWindow =
+                new TotpRegisterWindow(
+                    enrollment);
+
+            bool? totpResult =
+                totpWindow.ShowDialog();
+
+            if (totpResult != true)
             {
-                if (!PasswordUtilities.ValidatePasswordPolicy(password, confirmPassword))
+                bool cleanupSucceeded =
+                    true;
+
+                try
                 {
-                    MessageBox.Show(
-                        "Password must be 12-64 characters, include uppercase, lowercase, number, special character, and match confirmation.",
-                        "Invalid Password",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning
-                    );
-                    return;
+                    await SecureFileEraser
+                        .SecurelyEraseFileAsync(
+                            Folders.GetUserFolder(
+                                username));
+                }
+                catch (Exception cleanupEx)
+                {
+                    cleanupSucceeded =
+                        false;
+
+                    FileLogger.Log(
+                        cleanupEx,
+                        "CRITICAL: Failed to securely erase registration data after TOTP enrollment was cancelled.",
+                        username);
                 }
 
+                if (!cleanupSucceeded)
+                {
+                    MessageBox.Show(
+                        "Registration was cancelled, but some temporary registration data could not be securely removed.",
+                        "Security Warning",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "TOTP enrollment was not completed.",
+                        "Registration Incomplete",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
 
-                RegisterButton.IsEnabled = false;
-
-                // Convert password to byte[]
-                passwordBytes = SecureStringUtil.ToBytes.ToUtf8Bytes(password);
-
-                // Pass password securely as char[] or byte[] to registration service
-                UserRegistrationService userRegistrationService = new UserRegistrationService(username, passwordBytes);
-                await userRegistrationService.RegisterAsync();
-
-                MessageBox.Show(
-                    "Registration successful!",
-                    "Success",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information
-                );
+                return;
             }
-            catch (Exception ex)
+
+            // =================================================
+            // SUCCESS
+            // =================================================
+
+            MessageBox.Show(
+                "Registration successful!",
+                "Success",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            UsernameBox.Clear();
+            PasswordBox.Clear();
+            ConfirmPasswordBox.Clear();
+        }
+        finally
+        {
+            // =================================================
+            // SECURE CLEANUP
+            // =================================================
+
+            if (passwordBytes != null)
             {
-                MessageBox.Show(
-                    $"Registration failed: {ex.Message}",
-                    "Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
+                CryptographicOperations.ZeroMemory(
+                    passwordBytes);
             }
-            finally
-            {
-                RegisterButton.IsEnabled = true;
 
-                // Always zero out sensitive data
-                MemoryHandling.Clear(passwordBytes);
-            }
+            password.Dispose();
+            confirmPassword.Dispose();
+
+            RegisterButton.IsEnabled =
+                true;
         }
     }
 }

@@ -37,5 +37,26 @@ namespace Aegis.App.Helpers
 
             return buffer;
         }
+
+        public static async Task ReadExactAsync(
+            Stream stream,
+            byte[] buffer,
+            int length)
+        {
+            int offset = 0;
+
+            while (offset < length)
+            {
+                int read =
+                    await stream.ReadAsync(
+                        buffer.AsMemory(offset, length - offset));
+
+                if (read == 0)
+                    throw new EndOfStreamException(
+                        "Pipe closed unexpectedly.");
+
+                offset += read;
+            }
+        }
     }
 }

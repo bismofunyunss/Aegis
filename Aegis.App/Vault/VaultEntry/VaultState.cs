@@ -2,9 +2,9 @@
 
 namespace Aegis.App.Vault.VaultEntry;
 
-public static class VaultState
+internal static class VaultState
 {
     // Use VaultEntry instead of VaultItem
-    public static ObservableCollection<VaultEntry> Items { get; } = new ObservableCollection<VaultEntry>();
-    public static bool IsDirty { get; set; }
+    internal static ObservableCollection<VaultEntry> Items { get; } = new ObservableCollection<VaultEntry>();
+    internal static bool IsDirty { get; set; }
 }

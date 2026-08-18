@@ -1,4 +1,5 @@
 ﻿using Aegis.App.Interfaces;
+using Aegis.App.Ipc;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -21,68 +22,115 @@ namespace Aegis.App
         {
             InitializeComponent();
 
-            // Collapsed by default
-            MenuColumn.Width = new GridLength(CollapsedWidth);
+            MenuColumn.Width =
+                new GridLength(CollapsedWidth);
+
             SetMenuTextVisibility(false);
 
-            // Create pages once
-            loginPage = new Pages.LoginPage();
-            registerPage = new Pages.RegisterPage();
-            vaultPage = new Pages.VaultPage();
-            fileEncryptionPage = new Pages.FileEncryptionPage();
-            hashPage = new Pages.HashPage();
-            settingsPage = new Pages.SettingsPage();
+            loginPage =
+                new Pages.LoginPage();
 
-            // Navigate to default page
+            registerPage =
+                new Pages.RegisterPage();
+
+            vaultPage =
+                new Pages.VaultPage();
+
+            fileEncryptionPage =
+                new Pages.FileEncryptionPage();
+
+            hashPage =
+                new Pages.HashPage();
+
+            settingsPage =
+                new Pages.SettingsPage();
+
             ContentFrame.Navigate(loginPage);
+
+            ResizeForPage(loginPage);
+
             MenuList.SelectedIndex = 0;
         }
 
-        private void MenuList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void MenuList_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e)
         {
-            if (MenuList.SelectedItem is ListBoxItem item)
-            {
-                Page page = item.Tag.ToString() switch
+            if (MenuList.SelectedItem is not ListBoxItem item)
+                return;
+
+
+            Page? page =
+                item.Tag?.ToString() switch
                 {
-                    "Login" => loginPage,
-                    "Register" => registerPage,
-                    "Vault" => vaultPage,
-                    "FileEncryption" => fileEncryptionPage,
-                    "Hash" => hashPage,
-                    "Settings" => settingsPage,
-                    _ => null
+                    "Login" =>
+                        loginPage,
+
+                    "Register" =>
+                        registerPage,
+
+                    "Vault" =>
+                        vaultPage,
+
+                    "FileEncryption" =>
+                        fileEncryptionPage,
+
+                    "Hash" =>
+                        hashPage,
+
+                    "Settings" =>
+                        settingsPage,
+
+                    _ =>
+                        null
                 };
 
-                if (page != null)
-                {
-                    ContentFrame.Navigate(page);
 
-                    // Resize window if the page implements IWindowResizablePage
-                    if (page is IWindowResizablePage resizable)
-                    {
-                        this.Width = resizable.DesiredWidth;
-                        this.Height = resizable.DesiredHeight;
-                    }
-                    else
-                    {
-                        this.Width = 900;
-                        this.Height = 600;
-                    }
-                }
+            if (page == null)
+                return;
+
+
+            ContentFrame.Navigate(page);
+
+            ResizeForPage(page);
+        }
+
+        private void ResizeForPage(Page page)
+        {
+            if (page is IWindowResizablePage resizable)
+            {
+                Width = resizable.DesiredWidth;
+                Height = resizable.DesiredHeight;
             }
         }
 
-
-        private void MenuToggle_Checked(object sender, RoutedEventArgs e)
+        private void MenuToggle_Unchecked(
+            object sender,
+            RoutedEventArgs e)
         {
-            MenuColumn.Width = new GridLength(CollapsedWidth);
-            SetMenuTextVisibility(false);
+            MenuColumn.Width =
+                new GridLength(ExpandedWidth);
+
+            SetMenuTextVisibility(true);
+
+            Width +=
+                ExpandedWidth -
+                CollapsedWidth;
         }
 
-        private void MenuToggle_Unchecked(object sender, RoutedEventArgs e)
+
+        private void MenuToggle_Checked(
+            object sender,
+            RoutedEventArgs e)
         {
-            MenuColumn.Width = new GridLength(ExpandedWidth);
-            SetMenuTextVisibility(true);
+            MenuColumn.Width =
+                new GridLength(CollapsedWidth);
+
+            SetMenuTextVisibility(false);
+
+            Width -=
+                ExpandedWidth -
+                CollapsedWidth;
         }
 
         private void SetMenuTextVisibility(bool visible)
@@ -117,6 +165,12 @@ namespace Aegis.App
         }
 
         private void Close_Click(object sender, RoutedEventArgs e) => this.Close();
+    }
+
+    public interface IWindowResizablePage
+    {
+        double DesiredWidth { get; }
+        double DesiredHeight { get; }
     }
 }
 

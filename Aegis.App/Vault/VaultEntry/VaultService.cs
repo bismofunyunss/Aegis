@@ -1,234 +1,434 @@
-﻿using Aegis.App.Crypto;
-using Aegis.App.Global;
-using Aegis.App.Helpers;
-using Aegis.App.IO;
-using Aegis.App.Vault.VaultEntry;
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Security;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using System.Windows;
-using Windows.Devices.Geolocation;
-using Org.BouncyCastle.Crypto.Engines;
-using static Aegis.App.Pages.VaultPage;
-using static Aegis.App.ParallelCtrEncryptor;
-using static Aegis.App.ParallelCtrEncryptor.SecureParallelEncryptor;
-using static Aegis.App.ParallelCtrEncryptor.SecureParallelEncryptor.ParallelCtr;
 
-namespace Aegis.App.Vault.Services
+using Aegis.App.Core;
+using Aegis.App.Crypto;
+using Aegis.App.IO;
+using Aegis.App.Ipc;
+
+using Aegis.Contracts;
+
+namespace Aegis.App.Vault.VaultEntry;
+
+internal static class VaultService
 {
-    public static class VaultService
+    private const string VaultFileName =
+        "vault.dat";
+
+    private static readonly JsonSerializerOptions JsonOptions =
+        new()
+        {
+            WriteIndented = false
+        };
+
+
+    // ============================================================
+    // SAVE VAULT
+    // ============================================================
+
+    internal static async Task SaveVaultAsync(
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        private const string VaultFileName = "vault.dat";
-        private const byte VaultMagic = 0xA4;
-        private const byte VaultVersion = 0x01;
-        private const int FileKeySaltSize = 128;
-        private const int NumLayerSalts = 8;
-        private const int LayerSaltSize = 128;
-
-        public static async Task SaveVaultAsync(IProgress<double>? progress = null)
+        if (Vault.VaultState.Items == null)
         {
-            if (!VaultState.Items.Any())
-            {
-                MessageBox.Show("Vault is empty.", "Nothing to save");
-                return;
-            }
-
-            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Instance.Username!), VaultFileName);
-
-            // Serialize entries
-            using var plaintext = new MemoryStream();
-            JsonSerializer.Serialize(plaintext, VaultState.Items,
-                new JsonSerializerOptions { WriteIndented = false });
-            plaintext.Position = 0;
-
-            // Generate salts and keys
-            var fileKeySalt = RandomNumberGenerator.GetBytes(FileKeySaltSize);
-            var fileKey = Session.Instance.MasterKey.DeriveKey(fileKeySalt, "Vault-File-Key"u8.ToArray(), 64);
-            var layerSalts = CryptoMethods.SaltGenerator.CreateSalts(LayerSaltSize);
-            var keys = KeyDerivation.DeriveKeys(fileKey, layerSalts);
-
-            try
-            {
-                await using var fileStream = new FileStream(vaultPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                await EncryptVaultAsync(plaintext, fileStream, keys, fileKeySalt, layerSalts);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to save vault:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                MemoryHandling.Clear(fileKey);
-                foreach (var salt in layerSalts) MemoryHandling.Clear(salt);
-                keys?.Dispose();
-            }
+            throw new InvalidOperationException(
+                "Vault collection is not initialized.");
         }
 
-        public static async Task LoadVaultAsync(IProgress<double>? progress = null)
+        if (Vault.VaultState.Items.Count == 0)
         {
-            string vaultPath = Path.Combine(IO.Folders.GetUserFolder(Session.Instance.Username!), VaultFileName);
+            MessageBox.Show(
+                "Vault is empty.",
+                "Nothing to save",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
 
-            VaultState.Items.Clear();
-            VaultState.IsDirty = false;
-
-            if (!File.Exists(vaultPath)) return;
-
-
-            try
-            {
-                await using var fileStream = new FileStream(vaultPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                await using var decryptedStream = new MemoryStream();
-
-                await DecryptVaultAsync(fileStream, decryptedStream);
-
-                decryptedStream.Position = 0;
-                var entries = JsonSerializer.Deserialize<List<VaultEntry.VaultEntry>>(decryptedStream)
-                              ?? new List<VaultEntry.VaultEntry>();
-
-                foreach (var entry in entries)
-                    VaultState.Items.Add(entry);
-
-                VaultState.IsDirty = false;
-            }
-            catch (CryptographicException)
-            {
-                MessageBox.Show("Vault file is corrupted or tampered.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to load vault:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            return;
         }
 
-        public static async Task EncryptVaultAsync(
-            Stream plaintext,
-            Stream output,
-            DerivedKeys keys,
-            byte[] fileKeySalt,
-            byte[][] layerSalts)
+        var username =
+            ClientSessionManager.Current.Username;
+
+        if (string.IsNullOrWhiteSpace(username))
         {
-            // Generate IVs
-            byte[] xchachaNonce = RandomNumberGenerator.GetBytes(16);
-            byte[] threefishIv = RandomNumberGenerator.GetBytes(120);
-            byte[] serpentIv = RandomNumberGenerator.GetBytes(8);
-            byte[] aesIv = RandomNumberGenerator.GetBytes(8);
-
-            using var stage1 = new MemoryStream();
-            using var stage2 = new MemoryStream();
-            using var stage3 = new MemoryStream();
-            using var stage4 = new MemoryStream();
-            using var stage5 = new MemoryStream();
-
-            // Layered encryption
-            await ParallelCtr.ShuffleLayer.ShuffleStreamAsync(plaintext, stage1, keys.ShuffleKey);
-            stage1.Position = 0;
-            await ParallelCtr.EncryptXChaCha20Poly1305ParallelRawAsync(stage1, stage2, keys.XChaChaKey, xchachaNonce);
-            stage2.Position = 0;
-            var threefishTag = await ParallelCtr.EncryptParallelAsync(stage2, stage3, keys.ThreefishKey, keys.ThreefishHmacKey, () => new ThreefishEngine(1024), threefishIv);
-            stage3.Position = 0;
-            var serpentTag = await ParallelCtr.EncryptParallelAsync(stage3, stage4, keys.SerpentKey, keys.SerpentHmacKey, () => new SerpentEngine(), serpentIv);
-            stage4.Position = 0;
-            var aesTag = await ParallelCtr.EncryptParallelAsync(stage4, stage5, keys.AesKey, keys.AesHmacKey, () => new AesEngine(), aesIv);
-
-            // Write header
-            await output.WriteAsync(new byte[] { VaultMagic, VaultVersion });
-            await output.WriteAsync(fileKeySalt);
-            foreach (var salt in layerSalts) await output.WriteAsync(salt);
-
-            await output.WriteAsync(xchachaNonce);
-            await output.WriteAsync(threefishIv);
-            await output.WriteAsync(serpentIv);
-            await output.WriteAsync(aesIv);
-
-            await output.WriteAsync(threefishTag);
-            await output.WriteAsync(serpentTag);
-            await output.WriteAsync(aesTag);
-
-            // Write ciphertext
-            stage5.Position = 0;
-            await stage5.CopyToAsync(output);
-
-            MemoryHandling.Clear(xchachaNonce, threefishIv, serpentIv, aesIv);
+            throw new SecurityException(
+                "No authenticated user session.");
         }
 
-        public static async Task DecryptVaultAsync(Stream encryptedVault, Stream output)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // ========================================================
+        // VAULT PATH
+        // ========================================================
+
+        var userFolder =
+            Folders.GetUserFolder(
+                username);
+
+        Directory.CreateDirectory(
+            userFolder);
+
+        var vaultPath =
+            Path.Combine(
+                userFolder,
+                VaultFileName);
+
+        // ========================================================
+        // TEMPORARY FILES
+        // ========================================================
+
+        string plaintextPath =
+            Path.Combine(
+                Path.GetTempPath(),
+                $"{Guid.NewGuid():N}.vault.json");
+
+        string? encryptedPath = null;
+
+        try
         {
-            const int FileKeySaltSize = 128;
-            const int NumLayerSalts = 8;
-            const int LayerSaltSize = 128;
+            // ====================================================
+            // SERIALIZE VAULT
+            // ====================================================
 
-            // Magic + version
-            int magic = encryptedVault.ReadByte();
-            int version = encryptedVault.ReadByte();
-            if (magic != VaultMagic || version != VaultVersion)
-                throw new CryptographicException("Invalid vault format.");
-
-            // File key salt
-            byte[] fileKeySalt = await HelperMethods.ReadExactAsync(encryptedVault, FileKeySaltSize);
-            var fileKey = Session.Instance.Crypto.MasterKey.DeriveKey(fileKeySalt, "Vault-File-Key"u8.ToArray(), 64);
-
-            // Layer salts
-            var layerSalts = new byte[NumLayerSalts][];
-            for (int i = 0; i < NumLayerSalts; i++)
-                layerSalts[i] = await HelperMethods.ReadExactAsync(encryptedVault, LayerSaltSize);
-
-            var keys = KeyDerivation.DeriveKeys(fileKey, layerSalts);
-
-            // IVs
-            byte[] xchachaNonce = await HelperMethods.ReadExactAsync(encryptedVault, 16);
-            byte[] threefishIv = await HelperMethods.ReadExactAsync(encryptedVault, 120);
-            byte[] serpentIv = await HelperMethods.ReadExactAsync(encryptedVault, 8);
-            byte[] aesIv = await HelperMethods.ReadExactAsync(encryptedVault, 8);
-
-            // HMAC tags
-            byte[] threefishTag = await HelperMethods.ReadExactAsync(encryptedVault, 64);
-            byte[] serpentTag = await HelperMethods.ReadExactAsync(encryptedVault, 64);
-            byte[] aesTag = await HelperMethods.ReadExactAsync(encryptedVault, 64);
-
-            try
+            await using (var plaintext =
+                         new FileStream(
+                             plaintextPath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             1024 * 1024,
+                             FileOptions.SequentialScan))
             {
-                // Decrypt layers
-                using var stage5 = new MemoryStream();
-                await encryptedVault.CopyToAsync(stage5);
-                stage5.Position = 0;
+                await JsonSerializer.SerializeAsync(
+                    plaintext,
+                    Vault.VaultState.Items,
+                    JsonOptions,
+                    cancellationToken);
 
-                using var stage4 = new MemoryStream();
-                await ParallelCtr.DecryptParallelAsync(stage5, stage4, keys.AesKey, keys.AesHmacKey,
-                    () => new AesEngine(), aesIv, aesTag);
-
-                stage4.Position = 0;
-                using var stage3 = new MemoryStream();
-                await ParallelCtr.DecryptParallelAsync(stage4, stage3, keys.SerpentKey, keys.SerpentHmacKey,
-                    () => new SerpentEngine(), serpentIv, serpentTag);
-
-                stage3.Position = 0;
-                using var stage2 = new MemoryStream();
-                await ParallelCtr.DecryptParallelAsync(stage3, stage2, keys.ThreefishKey, keys.ThreefishHmacKey,
-                    () => new ThreefishEngine(1024), threefishIv, threefishTag);
-
-                stage2.Position = 0;
-                using var stage1 = new MemoryStream();
-                await ParallelCtr.DecryptXChaCha20Poly1305ParallelRawAsync(stage2, stage1, keys.XChaChaKey,
-                    xchachaNonce);
-
-                stage1.Position = 0;
-                await ParallelCtr.ShuffleLayer.UnshuffleStreamAsync(stage1, output, keys.ShuffleKey);
-
-                MemoryHandling.Clear(xchachaNonce, threefishIv, serpentIv, aesIv);
+                await plaintext.FlushAsync(
+                    cancellationToken);
             }
-            finally
+
+            // ====================================================
+            // ENCRYPT
+            //
+            // Core/server handles:
+            //
+            //   authenticated session
+            //   file-key salt
+            //   FileKey
+            //   layer salts
+            //   derived keys
+            //   encryption pipeline
+            // ====================================================
+
+            var encryptedResult =
+                await AppServices.Core.EncryptFile(
+                    plaintextPath,
+                    progress,
+                    cancellationToken);
+
+            if (encryptedResult == null)
             {
-                keys?.Dispose();
+                throw new CryptographicException(
+                    "Vault encryption failed.");
+            }
+
+            encryptedPath =
+                encryptedResult.OutputPath;
+
+            if (string.IsNullOrWhiteSpace(
+                    encryptedPath))
+            {
+                throw new CryptographicException(
+                    "Encryption returned an invalid output path.");
+            }
+
+            if (!File.Exists(
+                    encryptedPath))
+            {
+                throw new IOException(
+                    "Encryption completed but the encrypted vault file was not created.");
+            }
+
+            // ====================================================
+            // REPLACE EXISTING VAULT
+            // ====================================================
+
+            File.Move(
+                encryptedPath,
+                vaultPath,
+                overwrite: true);
+
+            // Ownership transferred to vaultPath.
+            encryptedPath = null;
+
+            // ====================================================
+            // SUCCESS
+            // ====================================================
+
+            Vault.VaultState.IsDirty =
+                false;
+        }
+        finally
+        {
+            // ====================================================
+            // SECURELY ERASE PLAINTEXT
+            // ====================================================
+
+            if (File.Exists(
+                    plaintextPath))
+            {
+                try
+                {
+                    await SecureFileEraser
+                        .SecurelyEraseFileAsync(
+                            plaintextPath);
+                }
+                catch (Exception cleanupEx)
+                {
+                    FileLogger.Log(
+                        cleanupEx,
+                        "Failed to securely erase temporary plaintext vault file.",
+                        username);
+                }
+            }
+
+            // ====================================================
+            // REMOVE ORPHANED ENCRYPTED TEMP FILE
+            // ====================================================
+
+            if (encryptedPath != null &&
+                File.Exists(encryptedPath))
+            {
+                try
+                {
+                    File.Delete(
+                        encryptedPath);
+                }
+                catch (Exception cleanupEx)
+                {
+                    FileLogger.Log(
+                        cleanupEx,
+                        "Failed to remove orphaned encrypted temporary vault file.",
+                        username);
+                }
             }
         }
     }
 
+
+    // ============================================================
+    // LOAD VAULT
+    // ============================================================
+
+    internal static async Task LoadVaultAsync(
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (Vault.VaultState.Items == null)
+        {
+            throw new InvalidOperationException(
+                "Vault collection is not initialized.");
+        }
+
+        var username =
+            ClientSessionManager.Current.Username;
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            throw new SecurityException(
+                "No authenticated user session.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // ========================================================
+        // CLEAR CURRENT STATE
+        // ========================================================
+
+        Vault.VaultState.Items.Clear();
+
+        Vault.VaultState.IsDirty =
+            false;
+
+        // ========================================================
+        // VAULT PATH
+        // ========================================================
+
+        var userFolder =
+            Folders.GetUserFolder(
+                username);
+
+        var vaultPath =
+            Path.Combine(
+                userFolder,
+                VaultFileName);
+
+        // ========================================================
+        // NO VAULT YET
+        // ========================================================
+
+        if (!File.Exists(
+                vaultPath))
+        {
+            return;
+        }
+
+        string? decryptedPath =
+            null;
+
+        try
+        {
+            // ====================================================
+            // DECRYPT
+            //
+            // Core/server handles:
+            //
+            //   reading the file-key salt
+            //   recreating the FileKey
+            //   deriving pipeline keys
+            //   authentication
+            //   decryption
+            //
+            // UI receives only the temporary plaintext path.
+            // ====================================================
+
+            var result =
+                await AppServices.Core.DecryptFile(
+                    vaultPath,
+                    progress,
+                    cancellationToken);
+
+            if (result == null)
+            {
+                throw new CryptographicException(
+                    "Vault decryption failed.");
+            }
+
+            decryptedPath =
+                result.OutputPath;
+
+            if (string.IsNullOrWhiteSpace(
+                    decryptedPath))
+            {
+                throw new IOException(
+                    "Decryption returned an invalid plaintext path.");
+            }
+
+            if (!File.Exists(
+                    decryptedPath))
+            {
+                throw new IOException(
+                    "Decryption completed but the plaintext vault file was not created.");
+            }
+
+            // ====================================================
+            // READ DECRYPTED JSON
+            // ====================================================
+
+            await using var stream =
+                new FileStream(
+                    decryptedPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    1024 * 1024,
+                    FileOptions.SequentialScan);
+
+            var entries =
+                await JsonSerializer.DeserializeAsync<
+                    List<Vault.VaultEntry.VaultEntry>>(
+                    stream,
+                    JsonOptions,
+                    cancellationToken);
+
+            // ====================================================
+            // REPOPULATE VAULT
+            // ====================================================
+
+            if (entries != null)
+            {
+                foreach (var entry in entries)
+                {
+                    if (entry != null)
+                    {
+                        Vault.VaultState.Items.Add(
+                            entry);
+                    }
+                }
+            }
+
+            Vault.VaultState.IsDirty =
+                false;
+        }
+        catch (OperationCanceledException)
+        {
+            Vault.VaultState.Items.Clear();
+
+            Vault.VaultState.IsDirty =
+                false;
+
+            throw;
+        }
+        catch (CryptographicException)
+        {
+            Vault.VaultState.Items.Clear();
+
+            Vault.VaultState.IsDirty =
+                false;
+
+            throw;
+        }
+        catch (JsonException)
+        {
+            Vault.VaultState.Items.Clear();
+
+            Vault.VaultState.IsDirty =
+                false;
+
+            throw;
+        }
+        catch
+        {
+            Vault.VaultState.Items.Clear();
+
+            Vault.VaultState.IsDirty =
+                false;
+
+            throw;
+        }
+        finally
+        {
+            // ====================================================
+            // SECURELY ERASE DECRYPTED VAULT
+            // ====================================================
+
+            if (decryptedPath != null &&
+                File.Exists(
+                    decryptedPath))
+            {
+                try
+                {
+                    await SecureFileEraser
+                        .SecurelyEraseFileAsync(
+                            decryptedPath);
+                }
+                catch (Exception cleanupEx)
+                {
+                    FileLogger.Log(
+                        cleanupEx,
+                        "Failed to securely erase temporary decrypted vault file.",
+                        username);
+                }
+            }
+        }
+    }
 }
 
 

@@ -17,7 +17,7 @@ namespace Aegis.App
             if (string.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
-            string root = System.IO.Path.GetPathRoot(path);
+            string root = Path.GetPathRoot(path);
             if (string.IsNullOrEmpty(root))
                 throw new ArgumentException("Cannot determine root drive from path.", nameof(path));
 
@@ -64,12 +64,12 @@ namespace Aegis.App
         /// Public entry point for securely erasing a file.
         /// Chooses SSD vs HDD automatically.
         /// </summary>
-        public static async Task SecurelyEraseFileAsync(string path, bool isSSD, int passes = 3, int bufferSize = 64 * 1024)
+        public static async Task SecurelyEraseFileAsync(string path, int passes = 3, int bufferSize = 64 * 1024)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return;
 
-            if (isSSD)
+            if (IsSSD(path))
                 await SecureEraseSSDAsync(path, bufferSize).ConfigureAwait(false);
             else
                 await SecureEraseHDDAsync(path, passes, bufferSize).ConfigureAwait(false);
