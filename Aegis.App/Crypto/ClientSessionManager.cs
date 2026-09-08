@@ -1,7 +1,7 @@
 ﻿using System.Security;
 using Aegis.App.Crypto;
 
-namespace Aegis.App.Ipc;
+namespace Aegis.App.Crypto;
 
 public static class ClientSessionManager
 {

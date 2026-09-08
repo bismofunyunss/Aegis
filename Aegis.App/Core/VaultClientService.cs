@@ -99,8 +99,8 @@ namespace Aegis.App.Core
         }
 
         public async Task<bool> ConfirmLoginTotpAsync(
-            string authenticationId,
-            string code)
+     string authenticationId,
+     string code)
         {
             var session =
                 await IpcClient.ConfirmLoginTotpAsync(
@@ -109,9 +109,6 @@ namespace Aegis.App.Core
 
             if (session == null)
                 return false;
-
-            _ipc.SetSession(session);
-            ClientSessionManager.Set(session);
 
             _settingsStore =
                 new AegisSettingsStore(

@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Aegis.App.Argon2_Optimization;
 using Aegis.App.Crypto;
+using Aegis.App.Ipc;
 using Aegis.App.Settings;
 
 namespace Aegis.App.Pages;
