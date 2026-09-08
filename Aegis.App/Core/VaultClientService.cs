@@ -1,6 +1,8 @@
 ﻿using System.Security;
+using System.Security.Cryptography;
 using Aegis.App.Crypto;
 using Aegis.App.Ipc;
+using Aegis.App.Settings;
 using Aegis.Contracts;
 
 namespace Aegis.App.Core
@@ -8,6 +10,8 @@ namespace Aegis.App.Core
     public sealed class VaultClientService
     {
         private readonly IpcClient _ipc;
+        private AegisSettingsStore? _settingsStore;
+        private AegisSettings? _settings;
 
         public VaultClientService(IpcClient ipc)
         {
@@ -20,11 +24,11 @@ namespace Aegis.App.Core
         // TOTP ENROLLMENT
         // =========================================================
 
-        public async Task ConfirmTotpEnrollmentAsync(
+        public static async Task ConfirmTotpEnrollmentAsync(
             string enrollmentId,
             string code)
         {
-            await _ipc.ConfirmTotpEnrollmentAsync(
+            await IpcClient.ConfirmTotpEnrollmentAsync(
                 code, enrollmentId);
         }
 
@@ -32,22 +36,50 @@ namespace Aegis.App.Core
         // REGISTER
         // =========================================================
 
-        public async Task<TotpEnrollment> RegisterAsync(
+        public static async Task<TotpEnrollment> RegisterAsync(
             byte[] userPassword,
             uint[] pcrs,
-            string username)
+            string username,
+            AegisSettings settings)
         {
-            ValidateUsername(username);
+            ArgumentNullException.ThrowIfNull(
+                userPassword);
 
-            ValidatePcrs(pcrs);
+            ArgumentNullException.ThrowIfNull(
+                pcrs);
 
-            var settings =
-                BuildCryptoSettings();
+            ArgumentNullException.ThrowIfNull(
+                settings);
 
-            return await _ipc.RegisterAsync(
+            ValidateUsername(
+                username);
+
+            ValidatePcrs(
+                pcrs);
+
+            ValidateRegistrationSettings(
+                settings);
+
+            var cryptoSettings =
+                new CryptoSettings
+                {
+                    Pbkdf2Iterations =
+                        settings.Pbkdf2Iterations,
+
+                    ArgonIterations =
+                        settings.Argon2Iterations,
+
+                    ArgonParallelism =
+                        settings.Argon2Parallelism,
+
+                    ArgonMemoryKb =
+                        settings.Argon2MemoryMiB
+                };
+
+            return await IpcClient.RegisterAsync(
                 username,
                 userPassword,
-                settings,
+                cryptoSettings,
                 pcrs);
         }
 
@@ -55,13 +87,13 @@ namespace Aegis.App.Core
         // LOGIN
         // =========================================================
 
-        public async Task<string?> BeginLoginAsync(
+        public static async Task<string?> BeginLoginAsync(
             string username,
             byte[] password)
         {
             ValidateUsername(username);
 
-            return await _ipc.BeginLoginAsync(
+            return await IpcClient.BeginLoginAsync(
                 username,
                 password);
         }
@@ -71,7 +103,7 @@ namespace Aegis.App.Core
             string code)
         {
             var session =
-                await _ipc.ConfirmLoginTotpAsync(
+                await IpcClient.ConfirmLoginTotpAsync(
                     authenticationId,
                     code);
 
@@ -81,6 +113,13 @@ namespace Aegis.App.Core
             _ipc.SetSession(session);
             ClientSessionManager.Set(session);
 
+            _settingsStore =
+                new AegisSettingsStore(
+                    session.Username);
+
+            _settings =
+                _settingsStore.Load();
+
             return true;
         }
 
@@ -88,7 +127,7 @@ namespace Aegis.App.Core
         // FILE ENCRYPTION
         // =========================================================
 
-        public async Task<FileOperationResult> EncryptFile(
+        public async Task<FileOperationResult?> EncryptFile(
             string inputPath,
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default)
@@ -103,12 +142,12 @@ namespace Aegis.App.Core
         // FILE ENCRYPTION
         // =========================================================
 
-        public async Task<FileOperationResult> DecryptFile(
+        public async Task<FileOperationResult?> DecryptFile(
             string inputPath, IProgress<double>? progress = null,
             CancellationToken cancellationToken = default)
-        {
+        { 
             return await _ipc.DecryptFileAsync(
-                inputPath);
+                inputPath, null, cancellationToken);
         }
 
         // =========================================================
@@ -129,26 +168,59 @@ namespace Aegis.App.Core
             }
         }
 
+        public async Task ChangePasswordAsync(
+            byte[] currentPassword,
+            byte[] newPassword)
+        {
+            ArgumentNullException.ThrowIfNull(
+                currentPassword);
+
+            ArgumentNullException.ThrowIfNull(
+                newPassword);
+
+            if (currentPassword.Length == 0)
+                throw new ArgumentException(
+                    "Current password is empty.",
+                    nameof(currentPassword));
+
+            if (newPassword.Length == 0)
+                throw new ArgumentException(
+                    "New password is empty.",
+                    nameof(newPassword));
+
+            await _ipc.ChangePasswordAsync(
+                currentPassword,
+                newPassword);
+        }
+
         // =========================================================
         // INTERNAL POLICY HELPERS
         // =========================================================
 
         private CryptoSettings BuildCryptoSettings()
         {
+            if (_settings == null)
+            {
+                throw new SecurityException(
+                    "Aegis settings have not been loaded.");
+            }
+
             return new CryptoSettings
             {
                 ArgonIterations =
-                    Settings.Default.Iterations,
+                    _settings.Argon2Iterations,
 
                 ArgonParallelism =
-                    Settings.Default.Parallelism,
+                    _settings.Argon2Parallelism,
 
                 ArgonMemoryKb =
-                    (int)Settings.Default.Memory
+                    checked(
+                        _settings.Argon2MemoryMiB *
+                        1024)
             };
         }
 
-        private void ValidateUsername(
+        private static void ValidateUsername(
             string username)
         {
             if (string.IsNullOrWhiteSpace(username))
@@ -164,7 +236,7 @@ namespace Aegis.App.Core
             }
         }
 
-        private void ValidatePcrs(
+        private static void ValidatePcrs(
             uint[] pcrs)
         {
             if (pcrs == null || pcrs.Length == 0)
@@ -189,27 +261,42 @@ namespace Aegis.App.Core
             }
         }
 
-        private void ValidateBlob(
-            KeyBlob blob)
+        private static void ValidateRegistrationSettings(
+            AegisSettings settings)
         {
-            if (blob == null)
+            if (settings.Pbkdf2Iterations <
+                600_000)
             {
                 throw new SecurityException(
-                    "Missing KeyBlob.");
+                    "PBKDF2 iteration count is below the minimum.");
             }
 
-            if (blob.EncryptedKeyHierarchy == null ||
-                blob.EncryptedKeyHierarchy.Length == 0)
+            if (settings.Argon2Iterations <
+                1)
             {
                 throw new SecurityException(
-                    "Corrupt KeyBlob.");
+                    "Argon2 iteration count is invalid.");
             }
 
-            if (blob.GcmNonce == null ||
-                blob.GcmTag == null)
+            if (settings.Argon2MemoryMiB <
+                2048)
             {
                 throw new SecurityException(
-                    "Invalid KeyBlob crypto state.");
+                    "Argon2 memory is below the minimum.");
+            }
+
+            if (settings.Argon2Parallelism <
+                1)
+            {
+                throw new SecurityException(
+                    "Argon2 parallelism is invalid.");
+            }
+
+            if (settings.KdfTargetMilliseconds <=
+                0)
+            {
+                throw new SecurityException(
+                    "KDF target time is invalid.");
             }
         }
     }

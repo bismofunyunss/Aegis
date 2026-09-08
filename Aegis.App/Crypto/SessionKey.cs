@@ -1,82 +1,83 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Security.Cryptography;
 
-namespace Aegis.App.Crypto
+namespace Aegis.App.Crypto;
+
+public sealed class SessionKey : IDisposable
 {
-    public sealed class SessionKey : IDisposable
+    private const int KeySize = 32;
+
+    private readonly Lock _lock = new();
+
+    private byte[]? _key;
+
+    private bool _disposed;
+
+    public SessionKey(byte[] key)
     {
-        private byte[]? _key;
+        ArgumentNullException.ThrowIfNull(key);
 
-        private bool _disposed;
-
-
-        public SessionKey(byte[] key)
+        if (key.Length != KeySize)
         {
-            if (key == null ||
-                key.Length == 0)
-            {
-                throw new ArgumentException(
-                    "Invalid session key.",
-                    nameof(key));
-            }
+            throw new ArgumentException(
+                "Invalid session key.",
+                nameof(key));
+        }
 
-            _key = new byte[key.Length];
+        _key = new byte[KeySize];
+
+        Buffer.BlockCopy(
+            key,
+            0,
+            _key,
+            0,
+            KeySize);
+    }
+
+    public byte[] Export()
+    {
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(
+                _disposed,
+                this);
+
+            byte[] key = _key!;
+
+            byte[] copy =
+                new byte[key.Length];
 
             Buffer.BlockCopy(
                 key,
                 0,
-                _key,
-                0,
-                key.Length);
-        }
-
-
-        public byte[] Export()
-        {
-            if (_disposed ||
-                _key == null)
-            {
-                throw new ObjectDisposedException(
-                    nameof(SessionKey));
-            }
-
-
-            byte[] copy =
-                new byte[_key.Length];
-
-            Buffer.BlockCopy(
-                _key,
-                0,
                 copy,
                 0,
-                _key.Length);
+                key.Length);
 
             return copy;
         }
+    }
 
-
-        public void Dispose()
+    public void Dispose()
+    {
+        lock (_lock)
         {
             if (_disposed)
                 return;
 
-
             _disposed = true;
 
+            byte[]? key =
+                _key;
 
-            if (_key != null)
+            _key = null;
+
+            if (key is not null)
             {
                 CryptographicOperations.ZeroMemory(
-                    _key);
-
-                _key = null;
+                    key);
             }
-
-            GC.SuppressFinalize(this);
         }
+
+        GC.SuppressFinalize(this);
     }
 }

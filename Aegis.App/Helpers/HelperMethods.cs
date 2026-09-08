@@ -24,20 +24,6 @@ namespace Aegis.App.Helpers
             return result;
         }
 
-        public static async Task<byte[]> ReadExactAsync(Stream s, int length)
-        {
-            var buffer = new byte[length];
-            var read = 0;
-            while (read < length)
-            {
-                var n = await s.ReadAsync(buffer, read, length - read);
-                if (n == 0) throw new EndOfStreamException();
-                read += n;
-            }
-
-            return buffer;
-        }
-
         public static async Task ReadExactAsync(
             Stream stream,
             byte[] buffer,

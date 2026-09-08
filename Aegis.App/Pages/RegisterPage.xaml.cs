@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Aegis.App.PcrUtils;
+using Aegis.App.Settings;
 
 namespace Aegis.App.Pages;
 
@@ -227,11 +228,15 @@ public partial class RegisterPage :
             // REGISTER ACCOUNT
             // =================================================
 
+            var settings =
+                CurrentAegisSettings.Snapshot();
+
             var enrollment =
-                await AppServices.Core.RegisterAsync(
+                await Core.VaultClientService.RegisterAsync(
                     passwordBytes,
                     PcrSelection.Pcrs,
-                    username);
+                    username,
+                    settings);
 
             // =================================================
             // TOTP ENROLLMENT

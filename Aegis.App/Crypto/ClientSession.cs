@@ -1,95 +1,192 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics.Metrics;
-using System.Linq;
+﻿using Aegis.Contracts;
 using System.Security;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Input;
 
-namespace Aegis.App.Crypto
+namespace Aegis.App.Crypto;
+
+public sealed class ClientSession : IDisposable
 {
-    public sealed class ClientSession : IDisposable
+    private SessionKey? _sessionKey;
+
+    private bool _disposed;
+
+    private ulong _counter;
+
+    private readonly Lock _counterLock = new();
+
+    public string Username { get; }
+
+    public string? SessionId { get; private set; }
+
+    public DateTime CreatedUtc { get; }
+
+    public DateTime ExpiresUtc { get; }
+
+    public string ProtocolVersion { get; }
+
+    public ClientSession(
+        string username,
+        string sessionId,
+        byte[] sessionKey,
+        DateTime createdUtc,
+        DateTime expiresUtc,
+        string protocolVersion)
     {
-        private SessionKey? _sessionKey;
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            username);
 
-        private bool _disposed;
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            sessionId);
 
-        private ulong _counter;
+        ArgumentNullException.ThrowIfNull(
+            sessionKey);
 
-        private readonly object _counterLock = new();
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            protocolVersion);
 
-        public string Username { get; }
+        ValidateSessionId(
+            sessionId);
 
-        public string? SessionId { get; private set; }
-
-        public DateTime CreatedUtc { get; }
-
-        public DateTime ExpiresUtc { get; }
-
-        public string ProtocolVersion { get; }
-
-
-        public ClientSession(
-            string username,
-            string sessionId,
-            byte[] sessionKey,
-            DateTime createdUtc,
-            DateTime expiresUtc,
-            string protocolVersion)
+        if (sessionKey.Length !=
+            IpcProtocol.SessionKeySize)
         {
-            Username = username;
-            SessionId = sessionId;
-            CreatedUtc = createdUtc;
-            ExpiresUtc = expiresUtc;
-            ProtocolVersion = protocolVersion;
+            throw new SecurityException(
+                "Invalid session key.");
+        }
 
+        if (expiresUtc <= createdUtc)
+        {
+            throw new SecurityException(
+                "Invalid session lifetime.");
+        }
+
+        if (expiresUtc <= DateTime.UtcNow)
+        {
+            throw new SecurityException(
+                "Session has already expired.");
+        }
+
+        Username =
+            username;
+
+        SessionId =
+            sessionId;
+
+        CreatedUtc =
+            createdUtc;
+
+        ExpiresUtc =
+            expiresUtc;
+
+        ProtocolVersion =
+            protocolVersion;
+
+        try
+        {
             _sessionKey =
-                new SessionKey(sessionKey);
+                new SessionKey(
+                    sessionKey);
 
             _counter = 0;
         }
-
-
-        public SessionKey SessionKey =>
-            _sessionKey ??
-            throw new ObjectDisposedException(
-                nameof(ClientSession));
-
-
-        internal ulong NextCounter()
+        catch
         {
-            lock (_counterLock)
-            {
-                ObjectDisposedException.ThrowIf(
-                    _disposed,
-                    this);
-
-                return ++_counter;
-            }
+            _sessionKey?.Dispose();
+            _sessionKey = null;
+            SessionId = null;
+            throw;
         }
+    }
 
+    public SessionKey SessionKey
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(
+                _disposed,
+                this);
 
-        public void Dispose()
+            return _sessionKey
+                   ?? throw new ObjectDisposedException(
+                       nameof(ClientSession));
+        }
+    }
+
+    internal ulong NextCounter()
+    {
+        lock (_counterLock)
+        {
+            ObjectDisposedException.ThrowIf(
+                _disposed,
+                this);
+
+            if (_counter == ulong.MaxValue)
+            {
+                throw new SecurityException(
+                    "IPC counter exhausted.");
+            }
+
+            return ++_counter;
+        }
+    }
+
+    internal bool IsExpired()
+    {
+        lock (_counterLock)
+        {
+            ObjectDisposedException.ThrowIf(
+                _disposed,
+                this);
+
+            return DateTime.UtcNow >=
+                   ExpiresUtc;
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_counterLock)
         {
             if (_disposed)
                 return;
 
-            lock (_counterLock)
-            {
-                if (_disposed)
-                    return;
+            _disposed = true;
 
-                _disposed = true;
-                _counter = 0;
-            }
+            _counter = 0;
 
-            _sessionKey?.Dispose();
+            SessionKey? sessionKey =
+                _sessionKey;
+
             _sessionKey = null;
 
             SessionId = null;
 
-            GC.SuppressFinalize(this);
+            sessionKey?.Dispose();
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    private static void ValidateSessionId(
+        string sessionId)
+    {
+        if (sessionId.Length != 32)
+        {
+            throw new SecurityException(
+                "Invalid session.");
+        }
+
+        foreach (char c in sessionId)
+        {
+            bool hex =
+                c is >= '0' and <= '9'
+                or >= 'A' and <= 'F'
+                or >= 'a' and <= 'f';
+
+            if (!hex)
+            {
+                throw new SecurityException(
+                    "Invalid session.");
+            }
         }
     }
 }

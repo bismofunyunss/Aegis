@@ -47,11 +47,11 @@ public partial class TotpRegisterWindow : Window
         object sender,
         RoutedEventArgs e)
     {
+        List<char> list = [];
+        foreach (var c in CodeTextBox.Text.Where(char.IsDigit)) list.Add(c);
         string code =
             new(
-                CodeTextBox.Text
-                    .Where(char.IsDigit)
-                    .ToArray());
+                [.. list]);
 
         if (code.Length != 6)
         {
@@ -74,8 +74,7 @@ public partial class TotpRegisterWindow : Window
             StatusText.Visibility =
                 Visibility.Visible;
 
-            await AppServices.Core
-                .ConfirmTotpEnrollmentAsync(
+            await Core.VaultClientService.ConfirmTotpEnrollmentAsync(
                     _enrollment.EnrollmentId,
                     code);
 

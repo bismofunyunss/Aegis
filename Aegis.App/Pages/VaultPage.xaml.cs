@@ -1,7 +1,9 @@
 ﻿using Aegis.App.Crypto;
+using Aegis.App.Vault;
 using Aegis.App.Vault.VaultEntry;
 using System.Windows;
 using System.Windows.Controls;
+using VaultState = Aegis.App.Vault.VaultState;
 
 namespace Aegis.App.Pages;
 
@@ -12,7 +14,7 @@ public partial class VaultPage : Page
         InitializeComponent();
 
         DataGridVault.ItemsSource =
-            Vault.VaultState.Items;
+            VaultState.Items;
     }
 
 
@@ -25,12 +27,12 @@ public partial class VaultPage : Page
         RoutedEventArgs e)
     {
         var entry =
-            new VaultEntry();
+            new SecureVaultEntry();
 
-        Vault.VaultState.Items.Add(
+        VaultState.Items.Add(
             entry);
 
-        Vault.VaultState.IsDirty = true;
+        VaultState.IsDirty = true;
 
         DataGridVault.SelectedItem =
             entry;
@@ -49,12 +51,14 @@ public partial class VaultPage : Page
         RoutedEventArgs e)
     {
         if (sender is Button button &&
-            button.DataContext is Vault.VaultEntry.VaultEntry entry)
+            button.DataContext is SecureVaultEntry entry)
         {
-            Vault.VaultState.Items.Remove(
+            VaultState.Items.Remove(
                 entry);
 
-            Vault.VaultState.IsDirty = true;
+            entry.Dispose();
+
+            VaultState.IsDirty = true;
         }
     }
 
@@ -78,7 +82,7 @@ public partial class VaultPage : Page
                 DataGridEditingUnit.Row,
                 true);
 
-            if (Vault.VaultState.Items.Count == 0)
+            if (VaultState.Items.Count == 0)
             {
                 MessageBox.Show(
                     "The vault contains no entries.",

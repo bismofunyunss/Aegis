@@ -64,11 +64,6 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <Compile Update="Settings.Designer.cs">
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-    </Compile>
   </ItemGroup>
 
   <ItemGroup>
@@ -87,20 +82,19 @@
     <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="Sodium.Core" Version="1.4.0" />
     <PackageReference Include="System.Management" Version="10.0.1" />
-    <PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.1" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Aegis.Contracts">
       <HintPath>..\..\Aegis.Contracts\Aegis.Contracts\bin\Debug\net10.0\Aegis.Contracts.dll</HintPath>
     </Reference>
+    <Reference Include="Aegis.Core">
+      <HintPath>..\..\VaultCore\VaultCore\bin\Debug\net10.0\Aegis.Core.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
+    <Folder Include="ViewModels\" />
   </ItemGroup>
 
 </Project>

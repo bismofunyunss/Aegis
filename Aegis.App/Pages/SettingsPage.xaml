@@ -7,11 +7,11 @@
     Width="750"
     Background="{x:Null}">
 
-    <!-- ========================= -->
-    <!-- Page Resources            -->
-    <!-- ========================= -->
-
     <Page.Resources>
+
+        <!-- ========================================================= -->
+        <!-- INTEGER INPUT STYLE                                      -->
+        <!-- ========================================================= -->
 
         <Style
             x:Key="DarkIntegerUpDownStyle"
@@ -27,7 +27,7 @@
 
             <Setter
                 Property="BorderBrush"
-                Value="#555"/>
+                Value="#555555"/>
 
             <Setter
                 Property="BorderThickness"
@@ -58,22 +58,21 @@
     </Page.Resources>
 
 
-    <!-- ========================= -->
-    <!-- Layout                    -->
-    <!-- ========================= -->
+    <!-- ============================================================= -->
+    <!-- PAGE                                                          -->
+    <!-- ============================================================= -->
 
     <Grid>
 
         <Border
             Width="760"
-            MaxHeight="760"
-            CornerRadius="12"
-            BorderBrush="#444"
-            BorderThickness="1"
-            Background="#1E1E1E"
-            Padding="22"
             HorizontalAlignment="Center"
-            VerticalAlignment="Center">
+            VerticalAlignment="Center"
+            Background="#1E1E1E"
+            BorderBrush="#444444"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="22">
 
             <Border.Effect>
 
@@ -85,31 +84,37 @@
 
             </Border.Effect>
 
+
             <Grid>
 
                 <Grid.RowDefinitions>
 
+                    <!-- Header -->
                     <RowDefinition
                         Height="Auto"/>
 
+                    <!-- FIPS -->
                     <RowDefinition
                         Height="Auto"/>
 
+                    <!-- Main settings -->
                     <RowDefinition
                         Height="Auto"/>
 
+                    <!-- KDF optimizer -->
                     <RowDefinition
                         Height="Auto"/>
 
+                    <!-- Notice -->
                     <RowDefinition
                         Height="Auto"/>
 
                 </Grid.RowDefinitions>
 
 
-                <!-- ========================= -->
-                <!-- HEADER                    -->
-                <!-- ========================= -->
+                <!-- ================================================= -->
+                <!-- HEADER                                            -->
+                <!-- ================================================= -->
 
                 <StackPanel
                     Grid.Row="0"
@@ -123,27 +128,28 @@
                         HorizontalAlignment="Center"/>
 
                     <TextBlock
-                        Text="Configure authentication and key-derivation security."
-                        Foreground="#888"
+                        Text="Configure authentication, password derivation, and cryptographic security."
+                        Foreground="#888888"
                         FontSize="11"
                         HorizontalAlignment="Center"
+                        TextAlignment="Center"
                         Margin="0,4,0,0"/>
 
                 </StackPanel>
 
 
-                <!-- ========================= -->
-                <!-- FIPS                      -->
-                <!-- ========================= -->
+                <!-- ================================================= -->
+                <!-- FIPS MODE                                         -->
+                <!-- ================================================= -->
 
                 <Border
                     Grid.Row="1"
-                    CornerRadius="6"
+                    Margin="0,0,0,12"
+                    Padding="12"
+                    Background="#242424"
                     BorderBrush="#383838"
                     BorderThickness="1"
-                    Background="#242424"
-                    Padding="12"
-                    Margin="0,0,0,12">
+                    CornerRadius="6">
 
                     <Grid>
 
@@ -157,7 +163,9 @@
 
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel>
+
+                        <StackPanel
+                            Grid.Column="0">
 
                             <TextBlock
                                 Text="FIPS Mode"
@@ -166,12 +174,14 @@
                                 FontWeight="SemiBold"/>
 
                             <TextBlock
-                                Text="Use FIPS-approved cryptographic algorithms."
-                                Foreground="#888"
+                                Text="Use FIPS-approved cryptographic algorithms where supported."
+                                Foreground="#888888"
                                 FontSize="11"
+                                TextWrapping="Wrap"
                                 Margin="0,3,0,0"/>
 
                         </StackPanel>
+
 
                         <CheckBox
                             x:Name="UseFipsModeCheckBox"
@@ -186,9 +196,9 @@
                 </Border>
 
 
-                <!-- ========================= -->
-                <!-- MAIN SETTINGS              -->
-                <!-- ========================= -->
+                <!-- ================================================= -->
+                <!-- MAIN SETTINGS                                      -->
+                <!-- ================================================= -->
 
                 <Grid
                     Grid.Row="2"
@@ -208,17 +218,17 @@
                     </Grid.ColumnDefinitions>
 
 
-                    <!-- ===================== -->
-                    <!-- KEY DERIVATION         -->
-                    <!-- ===================== -->
+                    <!-- ============================================= -->
+                    <!-- KEY DERIVATION                                -->
+                    <!-- ============================================= -->
 
                     <Border
                         Grid.Column="0"
-                        CornerRadius="6"
+                        Padding="14"
+                        Background="#242424"
                         BorderBrush="#383838"
                         BorderThickness="1"
-                        Background="#242424"
-                        Padding="14">
+                        CornerRadius="6">
 
                         <StackPanel>
 
@@ -227,13 +237,13 @@
                                 Foreground="#E0E0E0"
                                 FontSize="14"
                                 FontWeight="SemiBold"
-                                Margin="0,0,0,12"/>
+                                Margin="0,0,0,14"/>
 
 
                             <!-- PBKDF2 -->
 
                             <Grid
-                                Margin="0,0,0,12">
+                                Margin="0,0,0,10">
 
                                 <Grid.ColumnDefinitions>
 
@@ -245,28 +255,33 @@
 
                                 </Grid.ColumnDefinitions>
 
+
                                 <StackPanel
+                                    Grid.Column="0"
                                     VerticalAlignment="Center">
 
                                     <TextBlock
-                                        Text="PBKDF2"
-                                        Foreground="#CCC"
+                                        Text="PBKDF2-SHA256"
+                                        Foreground="#CCCCCC"
                                         FontSize="12"/>
 
                                     <TextBlock
                                         Text="Iterations"
-                                        Foreground="#777"
-                                        FontSize="10"/>
+                                        Foreground="#777777"
+                                        FontSize="10"
+                                        Margin="0,2,0,0"/>
 
                                 </StackPanel>
+
 
                                 <xctk:IntegerUpDown
                                     x:Name="Pbkdf2IterationsUpDown"
                                     Grid.Column="1"
-                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Height="32"
+                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Value="100000"
                                     Minimum="1"
+                                    Maximum="2147483647"
                                     Increment="50000"
                                     ValueChanged="Pbkdf2IterationsUpDown_ValueChanged"/>
 
@@ -276,20 +291,20 @@
                             <Border
                                 Height="1"
                                 Background="#353535"
-                                Margin="0,0,0,12"/>
+                                Margin="0,2,0,12"/>
 
 
-                            <!-- Argon2 Header -->
+                            <!-- Argon2id -->
 
                             <TextBlock
                                 Text="Argon2id"
-                                Foreground="#CCC"
+                                Foreground="#CCCCCC"
                                 FontSize="12"
                                 FontWeight="SemiBold"
                                 Margin="0,0,0,10"/>
 
 
-                            <!-- Argon2 Iterations -->
+                            <!-- Argon2 iterations -->
 
                             <Grid
                                 Margin="0,0,0,8">
@@ -304,25 +319,29 @@
 
                                 </Grid.ColumnDefinitions>
 
+
                                 <TextBlock
                                     Text="Iterations"
-                                    Foreground="#999"
+                                    Foreground="#999999"
                                     FontSize="11"
                                     VerticalAlignment="Center"/>
+
 
                                 <xctk:IntegerUpDown
                                     x:Name="Argon2IterationsUpDown"
                                     Grid.Column="1"
-                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Height="30"
+                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Value="1"
                                     Minimum="1"
+                                    Maximum="64"
+                                    Increment="1"
                                     ValueChanged="Argon2IterationsUpDown_ValueChanged"/>
 
                             </Grid>
 
 
-                            <!-- Argon2 Memory -->
+                            <!-- Argon2 memory -->
 
                             <Grid
                                 Margin="0,0,0,8">
@@ -337,27 +356,29 @@
 
                                 </Grid.ColumnDefinitions>
 
+
                                 <TextBlock
-                                    Text="Memory (MB)"
-                                    Foreground="#999"
+                                    Text="Memory (MiB)"
+                                    Foreground="#999999"
                                     FontSize="11"
                                     VerticalAlignment="Center"/>
+
 
                                 <xctk:IntegerUpDown
                                     x:Name="Argon2MemoryUpDown"
                                     Grid.Column="1"
-                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Height="30"
-                                    Value="256"
+                                    Style="{StaticResource DarkIntegerUpDownStyle}"
+                                    Value="2048"
                                     Minimum="1024"
-                                    Maximum="33554432"
+                                    Maximum="32768"
                                     Increment="1024"
                                     ValueChanged="Argon2MemoryUpDown_ValueChanged"/>
 
                             </Grid>
 
 
-                            <!-- Argon2 Parallelism -->
+                            <!-- Argon2 parallelism -->
 
                             <Grid>
 
@@ -371,19 +392,23 @@
 
                                 </Grid.ColumnDefinitions>
 
+
                                 <TextBlock
                                     Text="Parallelism"
-                                    Foreground="#999"
+                                    Foreground="#999999"
                                     FontSize="11"
                                     VerticalAlignment="Center"/>
+
 
                                 <xctk:IntegerUpDown
                                     x:Name="Argon2ParallelismUpDown"
                                     Grid.Column="1"
-                                    Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Height="30"
-                                    Value="1"
+                                    Style="{StaticResource DarkIntegerUpDownStyle}"
+                                    Value="4"
                                     Minimum="1"
+                                    Maximum="32"
+                                    Increment="1"
                                     ValueChanged="Argon2ParallelismUpDown_ValueChanged"/>
 
                             </Grid>
@@ -393,40 +418,64 @@
                     </Border>
 
 
-                    <!-- ===================== -->
-                    <!-- PASSWORD OPTIONS       -->
-                    <!-- ===================== -->
+                    <!-- ============================================= -->
+                    <!-- PASSWORD                                       -->
+                    <!-- ============================================= -->
 
                     <Border
                         Grid.Column="2"
-                        CornerRadius="6"
+                        Padding="14"
+                        Background="#242424"
                         BorderBrush="#383838"
                         BorderThickness="1"
-                        Background="#242424"
-                        Padding="14">
+                        CornerRadius="6">
 
-                        <StackPanel>
+                        <Grid>
+
+                            <Grid.RowDefinitions>
+
+                                <RowDefinition
+                                    Height="Auto"/>
+
+                                <RowDefinition
+                                    Height="Auto"/>
+
+                                <RowDefinition
+                                    Height="Auto"/>
+
+                                <RowDefinition
+                                    Height="Auto"/>
+
+                            </Grid.RowDefinitions>
+
 
                             <TextBlock
+                                Grid.Row="0"
                                 Text="Password"
                                 Foreground="#E0E0E0"
                                 FontSize="14"
                                 FontWeight="SemiBold"
                                 Margin="0,0,0,12"/>
 
-                            <TextBlock
-                                Text="Change your account password."
-                                Foreground="#CCC"
-                                FontSize="12"/>
 
                             <TextBlock
-                                Text="The master key will be rewrapped using the new password."
-                                Foreground="#777"
+                                Grid.Row="1"
+                                Text="Change your account password."
+                                Foreground="#CCCCCC"
+                                FontSize="12"/>
+
+
+                            <TextBlock
+                                Grid.Row="2"
+                                Text="The existing account key hierarchy will be reprotected using the new password."
+                                Foreground="#777777"
                                 FontSize="10"
                                 TextWrapping="Wrap"
                                 Margin="0,4,0,18"/>
 
+
                             <Button
+                                Grid.Row="3"
                                 Content="Change Password"
                                 Width="170"
                                 Height="36"
@@ -434,101 +483,337 @@
                                 FontSize="12"
                                 FontWeight="SemiBold"
                                 Style="{StaticResource AegisButton}"
-                                Click="ChangePasswordButton_Click">
+                                Click="ChangePasswordButton_Click"/>
 
-                            </Button>
-
-                        </StackPanel>
+                        </Grid>
 
                     </Border>
 
                 </Grid>
 
 
-                <!-- ========================= -->
-                <!-- ARGON2 OPTIMIZER           -->
-                <!-- ========================= -->
+                <!-- ================================================= -->
+                <!-- KDF OPTIMIZATION                                  -->
+                <!-- ================================================= -->
 
                 <Border
                     Grid.Row="3"
-                    CornerRadius="6"
+                    Padding="14"
+                    Margin="0,0,0,12"
+                    Background="#242424"
                     BorderBrush="#383838"
                     BorderThickness="1"
-                    Background="#242424"
-                    Padding="14"
-                    Margin="0,0,0,12">
+                    CornerRadius="6">
 
                     <Grid>
 
-                        <Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
 
-                            <ColumnDefinition
-                                Width="*"/>
+                            <RowDefinition
+                                Height="Auto"/>
 
-                            <ColumnDefinition
-                                Width="Auto"/>
+                            <RowDefinition
+                                Height="Auto"/>
 
-                        </Grid.ColumnDefinitions>
+                            <RowDefinition
+                                Height="Auto"/>
 
-                        <StackPanel
-                            VerticalAlignment="Center"
-                            Margin="0,0,20,0">
+                        </Grid.RowDefinitions>
+
+
+                        <!-- Header -->
+
+                        <Grid
+                            Grid.Row="0"
+                            Margin="0,0,0,14">
+
+                            <Grid.ColumnDefinitions>
+
+                                <ColumnDefinition
+                                    Width="*"/>
+
+                                <ColumnDefinition
+                                    Width="180"/>
+
+                            </Grid.ColumnDefinitions>
+
+
+                            <StackPanel
+                                Grid.Column="0"
+                                Margin="0,0,20,0">
+
+                                <TextBlock
+                                    Text="KDF Optimization"
+                                    Foreground="#E0E0E0"
+                                    FontSize="14"
+                                    FontWeight="SemiBold"/>
+
+                                <TextBlock
+                                    Text="Benchmark PBKDF2-SHA256 and Argon2id using a derivation time you are comfortable with."
+                                    Foreground="#888888"
+                                    FontSize="10"
+                                    TextWrapping="Wrap"
+                                    Margin="0,4,0,0"/>
+
+                            </StackPanel>
+
+
+                            <!-- Target time -->
+
+                            <Grid
+                                Grid.Column="1">
+
+                                <Grid.ColumnDefinitions>
+
+                                    <ColumnDefinition
+                                        Width="*"/>
+
+                                    <ColumnDefinition
+                                        Width="90"/>
+
+                                </Grid.ColumnDefinitions>
+
+
+                                <StackPanel
+                                    Grid.Column="0"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,8,0">
+
+                                    <TextBlock
+                                        Text="Target Time"
+                                        Foreground="#CCCCCC"
+                                        FontSize="11"/>
+
+                                    <TextBlock
+                                        Text="Milliseconds"
+                                        Foreground="#777777"
+                                        FontSize="9"/>
+
+                                </StackPanel>
+
+
+                                <xctk:IntegerUpDown
+                                    x:Name="KdfTargetMillisecondsUpDown"
+                                    Grid.Column="1"
+                                    Height="32"
+                                    Style="{StaticResource DarkIntegerUpDownStyle}"
+                                    Value="10000"
+                                    Minimum="100"
+                                    Maximum="720000"
+                                    Increment="10000"
+                                    ValueChanged="KdfTargetMillisecondsUpDown_ValueChanged"
+                                    ToolTip="Target derivation time used by both KDF optimizers. Every 10,000ms is 10 seconds."/>
+
+                            </Grid>
+
+                        </Grid>
+
+
+                        <!-- Optimizer cards -->
+
+                        <Grid
+                            Grid.Row="1">
+
+                            <Grid.ColumnDefinitions>
+
+                                <ColumnDefinition
+                                    Width="*"/>
+
+                                <ColumnDefinition
+                                    Width="12"/>
+
+                                <ColumnDefinition
+                                    Width="*"/>
+
+                            </Grid.ColumnDefinitions>
+
+
+                            <!-- PBKDF2 optimizer -->
+
+                            <Border
+                                Grid.Column="0"
+                                Padding="10"
+                                Background="#202020"
+                                BorderBrush="#333333"
+                                BorderThickness="1"
+                                CornerRadius="6">
+
+                                <Grid>
+
+                                    <Grid.ColumnDefinitions>
+
+                                        <ColumnDefinition
+                                            Width="*"/>
+
+                                        <ColumnDefinition
+                                            Width="Auto"/>
+
+                                    </Grid.ColumnDefinitions>
+
+
+                                    <StackPanel
+                                        Grid.Column="0"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,12,0">
+
+                                        <TextBlock
+                                            Text="PBKDF2-SHA256"
+                                            Foreground="#D8D8D8"
+                                            FontSize="11"
+                                            FontWeight="SemiBold"/>
+
+                                        <TextBlock
+                                            x:Name="Pbkdf2OptimizationStatusText"
+                                            Text="No optimization performed."
+                                            Foreground="#666666"
+                                            FontSize="9"
+                                            TextWrapping="Wrap"
+                                            Margin="0,4,0,0"/>
+
+                                    </StackPanel>
+
+
+                                    <Button
+                                        x:Name="OptimizePbkdf2Button"
+                                        Grid.Column="1"
+                                        Width="100"
+                                        Height="32"
+                                        Content="Optimize"
+                                        FontSize="11"
+                                        FontWeight="SemiBold"
+                                        Style="{StaticResource AegisButton}"
+                                        Click="OptimizePbkdf2Button_Click"/>
+
+                                </Grid>
+
+                            </Border>
+
+
+                            <!-- Argon2 optimizer -->
+
+                            <Border
+                                Grid.Column="2"
+                                Padding="10"
+                                Background="#202020"
+                                BorderBrush="#333333"
+                                BorderThickness="1"
+                                CornerRadius="6">
+
+                                <Grid>
+
+                                    <Grid.ColumnDefinitions>
+
+                                        <ColumnDefinition
+                                            Width="*"/>
+
+                                        <ColumnDefinition
+                                            Width="Auto"/>
+
+                                    </Grid.ColumnDefinitions>
+
+
+                                    <StackPanel
+                                        Grid.Column="0"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,12,0">
+
+                                        <TextBlock
+                                            Text="Argon2id"
+                                            Foreground="#D8D8D8"
+                                            FontSize="11"
+                                            FontWeight="SemiBold"/>
+
+                                        <TextBlock
+                                            x:Name="Argon2OptimizationStatusText"
+                                            Text="No optimization performed."
+                                            Foreground="#666666"
+                                            FontSize="9"
+                                            TextWrapping="Wrap"
+                                            Margin="0,4,0,0"/>
+
+                                    </StackPanel>
+
+
+                                    <Button
+                                        x:Name="OptimizeArgon2Button"
+                                        Grid.Column="1"
+                                        Width="100"
+                                        Height="32"
+                                        Content="Optimize"
+                                        FontSize="11"
+                                        FontWeight="SemiBold"
+                                        Style="{StaticResource AegisButton}"
+                                        Click="OptimizeArgon2Button_Click"/>
+
+                                </Grid>
+
+                            </Border>
+
+                        </Grid>
+
+
+                        <!-- Optimize both -->
+
+                        <Grid
+                            Grid.Row="2"
+                            Margin="0,12,0,0">
+
+                            <Grid.ColumnDefinitions>
+
+                                <ColumnDefinition
+                                    Width="*"/>
+
+                                <ColumnDefinition
+                                    Width="Auto"/>
+
+                                <ColumnDefinition
+                                    Width="*"/>
+
+                            </Grid.ColumnDefinitions>
+
 
                             <TextBlock
-                                Text="Optimize Argon2id"
-                                Foreground="#E0E0E0"
-                                FontSize="14"
-                                FontWeight="SemiBold"/>
-
-                            <TextBlock
-                                Text="Automatically benchmark your system and select a stronger memory, iteration, and parallelism configuration."
-                                Foreground="#888"
-                                FontSize="10"
-                                TextWrapping="Wrap"
-                                Margin="0,4,0,0"/>
-
-                            <TextBlock
-                                x:Name="Argon2OptimizationStatusText"
-                                Text="No optimization performed."
+                                Grid.Column="0"
+                                VerticalAlignment="Center"
+                                Text="Run both optimizers using the selected target time."
                                 Foreground="#666666"
-                                FontSize="10"
-                                Margin="0,8,0,0"/>
+                                FontSize="9"
+                                TextWrapping="Wrap"/>
 
-                        </StackPanel>
 
-                        <Button
-                            x:Name="OptimizeArgon2Button"
-                            Grid.Column="1"
-                            Width="150"
-                            Height="38"
-                            Content="Optimize Argon2id"
-                            FontSize="12"
-                            FontWeight="SemiBold"
-                            Style="{StaticResource AegisButton}"
-                            Click="OptimizeArgon2Button_Click">
+                            <Button
+                                x:Name="OptimizeAllKdfButton"
+                                Grid.Column="1"
+                                Width="170"
+                                Height="34"
+                                Content="Optimize Both"
+                                FontSize="11"
+                                FontWeight="SemiBold"
+                                Style="{StaticResource AegisButton}"
+                                Click="OptimizeAllKdfButton_Click"/>
 
-                        </Button>
+                        </Grid>
 
                     </Grid>
 
                 </Border>
 
 
-                <!-- ========================= -->
-                <!-- SECURITY NOTICE            -->
-                <!-- ========================= -->
+                <!-- ================================================= -->
+                <!-- SECURITY NOTICE                                   -->
+                <!-- ================================================= -->
 
                 <Border
                     Grid.Row="4"
-                    CornerRadius="6"
+                    Padding="10"
                     Background="#202020"
-                    BorderBrush="#333"
+                    BorderBrush="#333333"
                     BorderThickness="1"
-                    Padding="10">
+                    CornerRadius="6">
 
                     <TextBlock
-                        Text="Changes to cryptographic parameters may affect compatibility with existing vault data."
-                        Foreground="#777"
+                        Text="KDF optimization is hardware-dependent. Higher derivation times increase resistance to password guessing but also increase login and password-change time. Changes to cryptographic parameters may affect compatibility with existing vault data."
+                        Foreground="#777777"
                         FontSize="10"
                         TextWrapping="Wrap"
                         TextAlignment="Center"/>

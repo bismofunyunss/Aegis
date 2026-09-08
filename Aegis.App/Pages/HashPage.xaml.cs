@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,7 +14,7 @@ namespace Aegis.App.Pages;
 /// </summary>
 public partial class HashPage : Page, IWindowResizablePage
 {
-    private string selectedFilePath;
+    private string? _selectedFilePath;
 
     public HashPage()
     {
@@ -35,9 +36,9 @@ public partial class HashPage : Page, IWindowResizablePage
 
         if (result == true)
         {
-            selectedFilePath = openFileDialog.FileName;
+            _selectedFilePath = openFileDialog.FileName;
             // Optional: show file name somewhere (maybe in the button or a label)
-            MessageBox.Show($"File selected:\n{selectedFilePath}", "File Selected", MessageBoxButton.OK,
+            MessageBox.Show($"File selected:\n{_selectedFilePath}", "File Selected", MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
     }
@@ -75,7 +76,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 return;
             }
 
-            selectedFilePath = info.Name;
+            _selectedFilePath = info.Name;
         }
         catch (Exception ex)
         {
@@ -99,7 +100,7 @@ public partial class HashPage : Page, IWindowResizablePage
 
     private void ComputeHashButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(selectedFilePath))
+        if (string.IsNullOrEmpty(_selectedFilePath))
         {
             MessageBox.Show("Please select a file first.", "No File", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -108,11 +109,11 @@ public partial class HashPage : Page, IWindowResizablePage
         if (HashAlgorithmComboBox.SelectedItem is not ComboBoxItem selectedItem)
             return;
 
-        var algorithm = selectedItem.Content.ToString();
+        string? algorithm = selectedItem.Content.ToString();
 
         try
         {
-            var hash = ComputeFileHash(selectedFilePath, algorithm);
+            var hash = ComputeFileHash(_selectedFilePath, algorithm ?? string.Empty);
             HashOutputTextBox.Text = hash;
         }
         catch (Exception ex)
@@ -122,7 +123,7 @@ public partial class HashPage : Page, IWindowResizablePage
         }
     }
 
-    private string ComputeFileHash(string filePath, string algorithm)
+    private static string ComputeFileHash(string filePath, string algorithm)
     {
         if (!File.Exists(filePath))
             throw new FileNotFoundException("File not found", filePath);
@@ -135,7 +136,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = md5.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA-1":
@@ -143,7 +144,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha1.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA-256":
@@ -151,7 +152,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha256.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA-384":
@@ -159,7 +160,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha384.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA-512":
@@ -167,7 +168,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha512.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA3-256":
@@ -175,7 +176,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha3256.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA3-384":
@@ -183,7 +184,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha3384.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             case "SHA3-512":
@@ -191,7 +192,7 @@ public partial class HashPage : Page, IWindowResizablePage
                 using (var stream = File.OpenRead(filePath))
                 {
                     var hash = sha3512.ComputeHash(stream);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    return Convert.ToHexStringLower(hash);
                 }
 
             default:

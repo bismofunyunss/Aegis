@@ -2,6 +2,8 @@
 using Aegis.App.Crypto;
 using Aegis.App.Ipc;
 using Aegis.App.SecureStringUtil;
+using Aegis.App.Vault;
+using Aegis.App.Vault.VaultEntry;
 using Aegis.App.Verification;
 using System.Diagnostics;
 using System.Security;
@@ -10,7 +12,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using Aegis.App.Vault.VaultEntry;
 using VaultState = Aegis.App.Vault.VaultState;
 
 namespace Aegis.App.Pages;
@@ -342,7 +343,7 @@ public partial class LoginPage : Page, IWindowResizablePage
         }
 
         var authenticationId =
-            await AppServices.Core.BeginLoginAsync(
+            await VaultClientService.BeginLoginAsync(
                 username,
                 passwordBytes);
 
@@ -383,6 +384,16 @@ public partial class LoginPage : Page, IWindowResizablePage
 
         var session =
             ClientSessionManager.Current;
+
+        byte[] ramKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        var ramSession =
+            new RamCryptoSession(ramKey);
+
+        VaultSessionManager.Unlock(
+            ramSession,
+            TimeSpan.FromMinutes(15));
 
         try
         {

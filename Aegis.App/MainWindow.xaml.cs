@@ -8,46 +8,46 @@ namespace Aegis.App
 {
     public partial class MainWindow : Window
     {
-        private double ExpandedWidth = 220;
-        private double CollapsedWidth = 60;
+        private readonly double _expandedWidth = 220;
+        private readonly double _collapsedWidth = 60;
 
-        private Pages.LoginPage loginPage;
-        private Pages.RegisterPage registerPage;
-        private Pages.VaultPage vaultPage;
-        private Pages.FileEncryptionPage fileEncryptionPage;
-        private Pages.HashPage hashPage;
-        private Pages.SettingsPage settingsPage;
+        private readonly Pages.LoginPage _loginPage;
+        private readonly Pages.RegisterPage _registerPage;
+        private readonly Pages.VaultPage _vaultPage;
+        private readonly Pages.FileEncryptionPage _fileEncryptionPage;
+        private readonly Pages.HashPage _hashPage;
+        private readonly Pages.SettingsPage _settingsPage;
 
         public MainWindow()
         {
             InitializeComponent();
 
             MenuColumn.Width =
-                new GridLength(CollapsedWidth);
+                new GridLength(_collapsedWidth);
 
             SetMenuTextVisibility(false);
 
-            loginPage =
+            _loginPage =
                 new Pages.LoginPage();
 
-            registerPage =
+            _registerPage =
                 new Pages.RegisterPage();
 
-            vaultPage =
+            _vaultPage =
                 new Pages.VaultPage();
 
-            fileEncryptionPage =
+            _fileEncryptionPage =
                 new Pages.FileEncryptionPage();
 
-            hashPage =
+            _hashPage =
                 new Pages.HashPage();
 
-            settingsPage =
+            _settingsPage =
                 new Pages.SettingsPage();
 
-            ContentFrame.Navigate(loginPage);
+            ContentFrame.Navigate(_loginPage);
 
-            ResizeForPage(loginPage);
+            ResizeForPage(_loginPage);
 
             MenuList.SelectedIndex = 0;
         }
@@ -64,22 +64,22 @@ namespace Aegis.App
                 item.Tag?.ToString() switch
                 {
                     "Login" =>
-                        loginPage,
+                        _loginPage,
 
                     "Register" =>
-                        registerPage,
+                        _registerPage,
 
                     "Vault" =>
-                        vaultPage,
+                        _vaultPage,
 
                     "FileEncryption" =>
-                        fileEncryptionPage,
+                        _fileEncryptionPage,
 
                     "Hash" =>
-                        hashPage,
+                        _hashPage,
 
                     "Settings" =>
-                        settingsPage,
+                        _settingsPage,
 
                     _ =>
                         null
@@ -109,13 +109,13 @@ namespace Aegis.App
             RoutedEventArgs e)
         {
             MenuColumn.Width =
-                new GridLength(ExpandedWidth);
+                new GridLength(_expandedWidth);
 
             SetMenuTextVisibility(true);
 
             Width +=
-                ExpandedWidth -
-                CollapsedWidth;
+                _expandedWidth -
+                _collapsedWidth;
         }
 
 
@@ -124,13 +124,13 @@ namespace Aegis.App
             RoutedEventArgs e)
         {
             MenuColumn.Width =
-                new GridLength(CollapsedWidth);
+                new GridLength(_collapsedWidth);
 
             SetMenuTextVisibility(false);
 
             Width -=
-                ExpandedWidth -
-                CollapsedWidth;
+                _expandedWidth -
+                _collapsedWidth;
         }
 
         private void SetMenuTextVisibility(bool visible)

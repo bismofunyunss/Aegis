@@ -1,16 +1,14 @@
-﻿using System.Collections.Generic;
+﻿using Aegis.App.Crypto;
+using Aegis.App.IO;
+using Aegis.App.Ipc;
+using Aegis.Contracts;
+using System.Diagnostics;
 using System.IO;
 using System.Security;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
-
-using Aegis.App.Core;
-using Aegis.App.Crypto;
-using Aegis.App.IO;
-using Aegis.App.Ipc;
-
-using Aegis.Contracts;
 
 namespace Aegis.App.Vault.VaultEntry;
 
@@ -30,194 +28,229 @@ internal static class VaultService
     // SAVE VAULT
     // ============================================================
 
-    internal static async Task SaveVaultAsync(
-        IProgress<double>? progress = null,
-        CancellationToken cancellationToken = default)
+    public static async Task SaveVaultAsync(
+    IProgress<double>? progress = null,
+    CancellationToken cancellationToken = default)
     {
-        if (Vault.VaultState.Items == null)
-        {
-            throw new InvalidOperationException(
-                "Vault collection is not initialized.");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (Vault.VaultState.Items.Count == 0)
-        {
-            MessageBox.Show(
-                "Vault is empty.",
-                "Nothing to save",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-
-            return;
-        }
-
-        var username =
+        string username =
             ClientSessionManager.Current.Username;
 
         if (string.IsNullOrWhiteSpace(username))
         {
-            throw new SecurityException(
-                "No authenticated user session.");
+            throw new InvalidOperationException(
+                "No authenticated user.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        string userFolder =
+            Folders.GetUserFolder(username);
 
-        // ========================================================
-        // VAULT PATH
-        // ========================================================
+        Directory.CreateDirectory(userFolder);
 
-        var userFolder =
-            Folders.GetUserFolder(
-                username);
-
-        Directory.CreateDirectory(
-            userFolder);
-
-        var vaultPath =
+        string vaultPath =
             Path.Combine(
                 userFolder,
-                VaultFileName);
+                "vault.dat");
 
-        // ========================================================
-        // TEMPORARY FILES
-        // ========================================================
-
-        string plaintextPath =
+        string tempPlaintext =
             Path.Combine(
                 Path.GetTempPath(),
-                $"{Guid.NewGuid():N}.vault.json");
+                $"aegis-vault-{Guid.NewGuid():N}.json");
 
-        string? encryptedPath = null;
+        List<VaultEntryDto> dtoEntries = new();
 
         try
         {
-            // ====================================================
-            // SERIALIZE VAULT
-            // ====================================================
+            // ========================================================
+            // BUILD DTOs
+            // ========================================================
 
-            await using (var plaintext =
-                         new FileStream(
-                             plaintextPath,
-                             FileMode.CreateNew,
-                             FileAccess.Write,
-                             FileShare.None,
-                             1024 * 1024,
-                             FileOptions.SequentialScan))
+            foreach (SecureVaultEntry entry in VaultState.Items)
             {
-                await JsonSerializer.SerializeAsync(
-                    plaintext,
-                    Vault.VaultState.Items,
-                    JsonOptions,
-                    cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                await plaintext.FlushAsync(
-                    cancellationToken);
+                byte[] password =
+                    entry.GetPasswordBytes();
+
+                byte[] notes =
+                    entry.GetNotesBytes();
+
+                try
+                {
+                    dtoEntries.Add(
+                        new VaultEntryDto
+                        {
+                            Account =
+                                entry.Account,
+
+                            Username =
+                                entry.Username,
+
+                            Email =
+                                entry.Email,
+
+                            Password =
+                                password,
+
+                            Notes =
+                                notes
+                        });
+
+                    Debug.WriteLine(
+    $"SAVE ENTRY: {entry.Account}");
+
+                    Debug.WriteLine(
+                        $"Password bytes BEFORE serialization: {password.Length}");
+
+                    Debug.WriteLine(
+                        $"Notes bytes BEFORE serialization: {notes.Length}");
+
+                    // Ownership moved into the DTO.
+                    password =
+                        Array.Empty<byte>();
+
+                    notes =
+                        Array.Empty<byte>();
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(
+                        password);
+
+                    CryptographicOperations.ZeroMemory(
+                        notes);
+                }
             }
 
-            // ====================================================
-            // ENCRYPT
-            //
-            // Core/server handles:
-            //
-            //   authenticated session
-            //   file-key salt
-            //   FileKey
-            //   layer salts
-            //   derived keys
-            //   encryption pipeline
-            // ====================================================
+            // ========================================================
+            // SERIALIZE
+            // ========================================================
 
-            var encryptedResult =
+            string json =
+                JsonSerializer.Serialize(
+                    dtoEntries,
+                    new JsonSerializerOptions
+                    {
+                        WriteIndented = false
+                    });
+
+            try
+            {
+                await File.WriteAllTextAsync(
+                    tempPlaintext,
+                    json,
+                    cancellationToken);
+            }
+            finally
+            {
+                json = string.Empty;
+            }
+
+            // ========================================================
+            // CLEAR PLAINTEXT ARRAYS FROM DTOs
+            // ========================================================
+
+            foreach (VaultEntryDto dto in dtoEntries)
+            {
+                CryptographicOperations.ZeroMemory(
+                    dto.Password);
+
+                CryptographicOperations.ZeroMemory(
+                    dto.Notes);
+
+                dto.Password =
+                    Array.Empty<byte>();
+
+                dto.Notes =
+                    Array.Empty<byte>();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ========================================================
+            // ENCRYPT TEMPORARY VAULT FILE
+            // ========================================================
+
+            FileOperationResult? encryptionResult =
                 await AppServices.Core.EncryptFile(
-                    plaintextPath,
+                    tempPlaintext,
                     progress,
                     cancellationToken);
 
-            if (encryptedResult == null)
+            if (encryptionResult is null)
             {
-                throw new CryptographicException(
-                    "Vault encryption failed.");
+                throw new InvalidOperationException(
+                    "File encryption returned no result.");
             }
 
-            encryptedPath =
-                encryptedResult.OutputPath;
+            string producedEncrypted =
+                encryptionResult.OutputPath;
 
-            if (string.IsNullOrWhiteSpace(
-                    encryptedPath))
+            if (string.IsNullOrWhiteSpace(producedEncrypted))
             {
-                throw new CryptographicException(
-                    "Encryption returned an invalid output path.");
+                throw new InvalidOperationException(
+                    "File encryption returned an empty output path.");
             }
 
-            if (!File.Exists(
-                    encryptedPath))
+            if (!File.Exists(producedEncrypted))
             {
-                throw new IOException(
-                    "Encryption completed but the encrypted vault file was not created.");
+                throw new FileNotFoundException(
+                    "Encrypted vault file was not created.",
+                    producedEncrypted);
             }
 
-            // ====================================================
-            // REPLACE EXISTING VAULT
-            // ====================================================
+            // ========================================================
+            // MOVE ENCRYPTED FILE INTO USER VAULT FOLDER
+            // ========================================================
 
             File.Move(
-                encryptedPath,
+                producedEncrypted,
                 vaultPath,
                 overwrite: true);
 
-            // Ownership transferred to vaultPath.
-            encryptedPath = null;
+            // ========================================================
+            // MARK CLEAN
+            // ========================================================
 
-            // ====================================================
-            // SUCCESS
-            // ====================================================
-
-            Vault.VaultState.IsDirty =
+            VaultState.IsDirty =
                 false;
+
+            VaultSessionManager.Current.Touch();
         }
         finally
         {
-            // ====================================================
-            // SECURELY ERASE PLAINTEXT
-            // ====================================================
+            // ========================================================
+            // ZERO DTO DATA
+            // ========================================================
 
-            if (File.Exists(
-                    plaintextPath))
+            foreach (VaultEntryDto dto in dtoEntries)
             {
-                try
+                CryptographicOperations.ZeroMemory(
+                    dto.Password);
+
+                CryptographicOperations.ZeroMemory(
+                    dto.Notes);
+            }
+
+            dtoEntries.Clear();
+
+            // ========================================================
+            // SECURELY ERASE TEMPORARY PLAINTEXT
+            // ========================================================
+
+            try
+            {
+                if (File.Exists(tempPlaintext))
                 {
                     await SecureFileEraser
                         .SecurelyEraseFileAsync(
-                            plaintextPath);
-                }
-                catch (Exception cleanupEx)
-                {
-                    FileLogger.Log(
-                        cleanupEx,
-                        "Failed to securely erase temporary plaintext vault file.",
-                        username);
+                            tempPlaintext);
                 }
             }
-
-            // ====================================================
-            // REMOVE ORPHANED ENCRYPTED TEMP FILE
-            // ====================================================
-
-            if (encryptedPath != null &&
-                File.Exists(encryptedPath))
+            catch
             {
-                try
-                {
-                    File.Delete(
-                        encryptedPath);
-                }
-                catch (Exception cleanupEx)
-                {
-                    FileLogger.Log(
-                        cleanupEx,
-                        "Failed to remove orphaned encrypted temporary vault file.",
-                        username);
-                }
+                // Never hide the original exception.
             }
         }
     }
@@ -227,191 +260,209 @@ internal static class VaultService
     // LOAD VAULT
     // ============================================================
 
-    internal static async Task LoadVaultAsync(
-        IProgress<double>? progress = null,
-        CancellationToken cancellationToken = default)
+    public static async Task LoadVaultAsync(
+     IProgress<double>? progress = null,
+     CancellationToken cancellationToken = default)
     {
-        if (Vault.VaultState.Items == null)
-        {
-            throw new InvalidOperationException(
-                "Vault collection is not initialized.");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var username =
+        string username =
             ClientSessionManager.Current.Username;
 
         if (string.IsNullOrWhiteSpace(username))
         {
-            throw new SecurityException(
-                "No authenticated user session.");
+            throw new InvalidOperationException(
+                "No authenticated user.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        string userFolder =
+            Folders.GetUserFolder(username);
 
-        // ========================================================
-        // CLEAR CURRENT STATE
-        // ========================================================
-
-        Vault.VaultState.Items.Clear();
-
-        Vault.VaultState.IsDirty =
-            false;
-
-        // ========================================================
-        // VAULT PATH
-        // ========================================================
-
-        var userFolder =
-            Folders.GetUserFolder(
-                username);
-
-        var vaultPath =
+        string vaultPath =
             Path.Combine(
                 userFolder,
-                VaultFileName);
+                "vault.dat");
 
-        // ========================================================
-        // NO VAULT YET
-        // ========================================================
-
-        if (!File.Exists(
-                vaultPath))
+        if (!File.Exists(vaultPath))
         {
+            VaultState.Items.Clear();
+            VaultState.IsDirty = false;
             return;
         }
 
-        string? decryptedPath =
-            null;
+        RamCryptoSession ramSession =
+            VaultSessionManager.Current.RamSession;
+
+        List<VaultEntryDto>? dtoEntries = null;
+
+        string? decryptedPath = null;
 
         try
         {
-            // ====================================================
-            // DECRYPT
-            //
-            // Core/server handles:
-            //
-            //   reading the file-key salt
-            //   recreating the FileKey
-            //   deriving pipeline keys
-            //   authentication
-            //   decryption
-            //
-            // UI receives only the temporary plaintext path.
-            // ====================================================
+            // ========================================================
+            // DECRYPT VAULT
+            // ========================================================
 
-            var result =
+            FileOperationResult? decryptResult =
                 await AppServices.Core.DecryptFile(
                     vaultPath,
                     progress,
                     cancellationToken);
 
-            if (result == null)
+            if (decryptResult is null)
             {
-                throw new CryptographicException(
-                    "Vault decryption failed.");
+                throw new InvalidOperationException(
+                    "File decryption returned no result.");
             }
 
             decryptedPath =
-                result.OutputPath;
+                decryptResult.OutputPath;
 
-            if (string.IsNullOrWhiteSpace(
-                    decryptedPath))
+            if (string.IsNullOrWhiteSpace(decryptedPath))
             {
-                throw new IOException(
-                    "Decryption returned an invalid plaintext path.");
+                throw new InvalidOperationException(
+                    "File decryption returned an empty output path.");
             }
 
-            if (!File.Exists(
-                    decryptedPath))
+            if (!File.Exists(decryptedPath))
             {
-                throw new IOException(
-                    "Decryption completed but the plaintext vault file was not created.");
+                throw new FileNotFoundException(
+                    "Decrypted vault file was not created.",
+                    decryptedPath);
             }
 
-            // ====================================================
-            // READ DECRYPTED JSON
-            // ====================================================
+            cancellationToken.ThrowIfCancellationRequested();
 
-            await using var stream =
-                new FileStream(
+            // ========================================================
+            // READ PLAINTEXT JSON
+            // ========================================================
+
+            string json =
+                await File.ReadAllTextAsync(
                     decryptedPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    1024 * 1024,
-                    FileOptions.SequentialScan);
-
-            var entries =
-                await JsonSerializer.DeserializeAsync<
-                    List<Vault.VaultEntry.VaultEntry>>(
-                    stream,
-                    JsonOptions,
                     cancellationToken);
 
-            // ====================================================
-            // REPOPULATE VAULT
-            // ====================================================
-
-            if (entries != null)
+            try
             {
-                foreach (var entry in entries)
+                dtoEntries =
+                    JsonSerializer.Deserialize<List<VaultEntryDto>>(
+                        json);
+
+                if (dtoEntries is null)
                 {
-                    if (entry != null)
+                    dtoEntries =
+                        new List<VaultEntryDto>();
+                }
+            }
+            finally
+            {
+                json = string.Empty;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ========================================================
+            // CLEAR CURRENT VAULT
+            // ========================================================
+
+            foreach (SecureVaultEntry existingEntry
+                     in VaultState.Items)
+            {
+                existingEntry.Dispose();
+            }
+
+            VaultState.Items.Clear();
+
+            // ========================================================
+            // CREATE SECURE LIVE ENTRIES
+            // ========================================================
+
+            foreach (VaultEntryDto dto in dtoEntries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var entry =
+                    new SecureVaultEntry
                     {
-                        Vault.VaultState.Items.Add(
-                            entry);
+                        Account =
+                            dto.Account,
+
+                        Username =
+                            dto.Username,
+
+                        Email =
+                            dto.Email
+                    };
+
+                try
+                {
+                    if (dto.Password.Length > 0)
+                    {
+                        entry.SetPassword(
+                            dto.Password);
                     }
+
+                    if (dto.Notes.Length > 0)
+                    {
+                        entry.SetNotes(
+                            dto.Notes);
+                    }
+
+                    VaultState.Items.Add(
+                        entry);
+                }
+                catch
+                {
+                    entry.Dispose();
+                    throw;
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(
+                        dto.Password);
+
+                    CryptographicOperations.ZeroMemory(
+                        dto.Notes);
+
+                    dto.Password =
+                        Array.Empty<byte>();
+
+                    dto.Notes =
+                        Array.Empty<byte>();
                 }
             }
 
-            Vault.VaultState.IsDirty =
-                false;
-        }
-        catch (OperationCanceledException)
-        {
-            Vault.VaultState.Items.Clear();
-
-            Vault.VaultState.IsDirty =
+            VaultState.IsDirty =
                 false;
 
-            throw;
-        }
-        catch (CryptographicException)
-        {
-            Vault.VaultState.Items.Clear();
-
-            Vault.VaultState.IsDirty =
-                false;
-
-            throw;
-        }
-        catch (JsonException)
-        {
-            Vault.VaultState.Items.Clear();
-
-            Vault.VaultState.IsDirty =
-                false;
-
-            throw;
-        }
-        catch
-        {
-            Vault.VaultState.Items.Clear();
-
-            Vault.VaultState.IsDirty =
-                false;
-
-            throw;
+            VaultSessionManager.Current.Touch();
         }
         finally
         {
-            // ====================================================
-            // SECURELY ERASE DECRYPTED VAULT
-            // ====================================================
+            // ========================================================
+            // ZERO ANY REMAINING DTO SENSITIVE DATA
+            // ========================================================
 
-            if (decryptedPath != null &&
-                File.Exists(
-                    decryptedPath))
+            if (dtoEntries is not null)
+            {
+                foreach (VaultEntryDto dto in dtoEntries)
+                {
+                    CryptographicOperations.ZeroMemory(
+                        dto.Password);
+
+                    CryptographicOperations.ZeroMemory(
+                        dto.Notes);
+                }
+
+                dtoEntries.Clear();
+            }
+
+            // ========================================================
+            // SECURELY ERASE DECRYPTED TEMPORARY FILE
+            // ========================================================
+
+            if (!string.IsNullOrWhiteSpace(decryptedPath) &&
+                File.Exists(decryptedPath))
             {
                 try
                 {
@@ -419,16 +470,12 @@ internal static class VaultService
                         .SecurelyEraseFileAsync(
                             decryptedPath);
                 }
-                catch (Exception cleanupEx)
+                catch
                 {
-                    FileLogger.Log(
-                        cleanupEx,
-                        "Failed to securely erase temporary decrypted vault file.",
-                        username);
+                    // Never hide the original
+                    // vault/decryption exception.
                 }
             }
         }
     }
 }
-
-

@@ -3,7 +3,7 @@ using System.IO;
 using System.Management;
 using System.Security.Cryptography;
 
-namespace Aegis.App
+namespace Aegis.App.IO
 {
     public static class SecureFileEraser
     {
@@ -12,12 +12,12 @@ namespace Aegis.App
         /// </summary>
         /// <param name="path">Full file or directory path</param>
         /// <returns>True if SSD, false if HDD</returns>
-        public static bool IsSSD(string path)
+        public static bool IsSsd(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
-            string root = Path.GetPathRoot(path);
+            string? root = Path.GetPathRoot(path);
             if (string.IsNullOrEmpty(root))
                 throw new ArgumentException("Cannot determine root drive from path.", nameof(path));
 
@@ -26,23 +26,26 @@ namespace Aegis.App
                 using var searcher = new ManagementObjectSearcher(
                     @"SELECT MediaType, Model FROM Win32_DiskDrive");
 
-                foreach (ManagementObject disk in searcher.Get())
+                foreach (var o in searcher.Get())
                 {
+                    var disk = (ManagementObject)o;
                     // MediaType might say "Fixed hard disk media" or "Solid state disk"
                     string mediaType = disk["MediaType"]?.ToString() ?? "";
                     string model = disk["Model"]?.ToString() ?? "";
 
                     // Check if the model contains "SSD" as a fallback
-                    if (mediaType.IndexOf("SSD", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        model.IndexOf("SSD", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (mediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
+                        model.Contains("SSD", StringComparison.OrdinalIgnoreCase))
                     {
                         // We found an SSD disk. Now check if the drive letter matches
                         var partitions = disk.GetRelated("Win32_DiskPartition");
-                        foreach (ManagementObject partition in partitions)
+                        foreach (var managementBaseObject in partitions)
                         {
+                            var partition = (ManagementObject)managementBaseObject;
                             var drives = partition.GetRelated("Win32_LogicalDisk");
-                            foreach (ManagementObject logical in drives)
+                            foreach (var o1 in drives)
                             {
+                                var logical = (ManagementObject)o1;
                                 string driveLetter = logical["DeviceID"]?.ToString() ?? "";
                                 if (string.Equals(driveLetter + "\\", root, StringComparison.OrdinalIgnoreCase))
                                 {
@@ -69,10 +72,10 @@ namespace Aegis.App
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return;
 
-            if (IsSSD(path))
-                await SecureEraseSSDAsync(path, bufferSize).ConfigureAwait(false);
+            if (IsSsd(path))
+                await SecureEraseSsdAsync(path, bufferSize).ConfigureAwait(false);
             else
-                await SecureEraseHDDAsync(path, passes, bufferSize).ConfigureAwait(false);
+                await SecureEraseHddAsync(path, passes, bufferSize).ConfigureAwait(false);
         }
 
         #region Private Methods (Exposable via wrapper)
@@ -80,7 +83,7 @@ namespace Aegis.App
         /// <summary>
         /// HDD wipe: multi-pass random + zero overwrite
         /// </summary>
-        private static async Task SecureEraseHDDAsync(string path, int passes, int bufferSize)
+        private static async Task SecureEraseHddAsync(string path, int passes, int bufferSize)
         {
             var fileInfo = new FileInfo(path);
             long length = fileInfo.Length;
@@ -136,7 +139,7 @@ namespace Aegis.App
         /// <summary>
         /// SSD wipe: single-pass AES-GCM overwrite
         /// </summary>
-        private static async Task SecureEraseSSDAsync(string path, int bufferSize)
+        private static async Task SecureEraseSsdAsync(string path, int bufferSize)
         {
             string tempPath = path + ".wipe";
 
@@ -148,7 +151,7 @@ namespace Aegis.App
 
             try
             {
-                using var aes = new AesGcm(key);
+                using var aes = new AesGcm(key, 16);
 
                 using var input = new FileStream(
                     path,
@@ -182,7 +185,7 @@ namespace Aegis.App
                         buffer.AsSpan(0, read),
                         cipher.AsSpan(0, read),
                         tag,
-                        ReadOnlySpan<byte>.Empty);
+                        []);
 
                     await output.WriteAsync(cipher.AsMemory(0, read)).ConfigureAwait(false);
 
@@ -213,38 +216,34 @@ namespace Aegis.App
         {
             try
             {
-                File.SetAttributes(path, FileAttributes.Normal);
-                FileInfo fi = new FileInfo(path);
-                fi.CreationTimeUtc = DateTime.UtcNow;
-                fi.LastAccessTimeUtc = DateTime.UtcNow;
-                fi.LastWriteTimeUtc = DateTime.UtcNow;
+                if (!File.Exists(path))
+                    return;
+
+                File.SetAttributes(
+                    path,
+                    FileAttributes.Normal);
+
+                var now =
+                    DateTime.UtcNow;
+
+                File.SetCreationTimeUtc(
+                    path,
+                    now);
+
+                File.SetLastAccessTimeUtc(
+                    path,
+                    now);
+
+                File.SetLastWriteTimeUtc(
+                    path,
+                    now);
             }
-            catch { /* best effort */ }
+            catch
+            {
+                // Best effort only.
+            }
         }
-
         #endregion
-    }
-
-    public static class FileIO
-    {
-        public static async Task WriteFileStreamAsync(string path, Stream inputStream)
-        {
-            if (inputStream == null)
-                throw new ArgumentNullException(nameof(inputStream));
-
-            await using var output = new FileStream(
-                path,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.Write,
-                bufferSize: 81920,
-                useAsync: true);
-
-            if (inputStream.CanSeek)
-                inputStream.Position = 0;
-
-            await inputStream.CopyToAsync(output).ConfigureAwait(false);
-        }
     }
 }
 

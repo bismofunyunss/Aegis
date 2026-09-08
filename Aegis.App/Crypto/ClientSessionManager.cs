@@ -1,68 +1,134 @@
-﻿using Aegis.Contracts;
-using System;
-using System.Collections.Generic;
-using System.Security;
-using System.Text;
+﻿using System.Security;
+using Aegis.App.Crypto;
 
-namespace Aegis.App.Crypto
+namespace Aegis.App.Ipc;
+
+public static class ClientSessionManager
 {
-    public static class ClientSessionManager
+    private static readonly Lock SyncRoot = new();
+
+    private static ClientSession? _current;
+
+    public static bool IsAuthenticated
     {
-        private static readonly object SyncRoot = new();
-
-        private static ClientSession? _current;
-
-        public static ClientSession Current
+        get
         {
-            get
-            {
-                lock (SyncRoot)
-                {
-                    return _current
-                           ?? throw new SecurityException(
-                               "No authenticated user session.");
-                }
-            }
-        }
-
-        public static bool IsAuthenticated
-        {
-            get
-            {
-                lock (SyncRoot)
-                {
-                    return _current != null;
-                }
-            }
-        }
-
-        public static void Set(
-            ClientSession session)
-        {
-            ArgumentNullException.ThrowIfNull(session);
-
-            ClientSession? oldSession;
+            ClientSession? session;
 
             lock (SyncRoot)
             {
-                oldSession = _current;
-                _current = session;
+                session = _current;
             }
 
-            oldSession?.Dispose();
-        }
+            if (session is null)
+                return false;
 
-        public static void Clear()
+            try
+            {
+                if (session.IsExpired())
+                {
+                    Clear();
+                    return false;
+                }
+
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+    }
+
+    public static ClientSession Current
+    {
+        get
         {
-            ClientSession? oldSession;
+            ClientSession? session;
 
             lock (SyncRoot)
             {
-                oldSession = _current;
+                session =
+                    _current
+                    ?? throw new SecurityException(
+                        "No authenticated session.");
+            }
+
+            try
+            {
+                if (session.IsExpired())
+                {
+                    ClearIfCurrent(session);
+
+                    throw new SecurityException(
+                        "Session expired.");
+                }
+
+                return session;
+            }
+            catch (ObjectDisposedException)
+            {
+                throw new SecurityException(
+                    "No authenticated session.");
+            }
+        }
+    }
+
+    public static void Set(
+        ClientSession session)
+    {
+        ArgumentNullException.ThrowIfNull(
+            session);
+
+        ClientSession? oldSession;
+
+        lock (SyncRoot)
+        {
+            oldSession = _current;
+            _current = session;
+        }
+
+        if (oldSession is not null &&
+            !ReferenceEquals(
+                oldSession,
+                session))
+        {
+            oldSession.Dispose();
+        }
+    }
+
+    public static void Clear()
+    {
+        ClientSession? oldSession;
+
+        lock (SyncRoot)
+        {
+            oldSession = _current;
+            _current = null;
+        }
+
+        oldSession?.Dispose();
+    }
+
+    private static void ClearIfCurrent(
+        ClientSession session)
+    {
+        bool shouldDispose = false;
+
+        lock (SyncRoot)
+        {
+            if (ReferenceEquals(
+                    _current,
+                    session))
+            {
                 _current = null;
+                shouldDispose = true;
             }
+        }
 
-            oldSession?.Dispose();
+        if (shouldDispose)
+        {
+            session.Dispose();
         }
     }
 }

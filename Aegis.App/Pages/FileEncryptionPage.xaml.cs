@@ -368,57 +368,59 @@ public partial class FileEncryptionPage :
                         null,
                         _operationCts.Token);
 
-            if (result == null)
+            if (result != null)
+            {
+                if (string.IsNullOrWhiteSpace(
+                        result.OutputPath))
+                {
+                    throw new CryptographicException(
+                        "Encryption did not produce an output file.");
+                }
+
+                if (!File.Exists(
+                        result.OutputPath))
+                {
+                    throw new FileNotFoundException(
+                        "Encrypted output file was not created.",
+                        result.OutputPath);
+                }
+
+                _currentResult =
+                    result;
+
+                FileVars.IsEncrypted =
+                    true;
+
+                FileVars.IsDecrypted =
+                    false;
+
+                ProgressBar.Value =
+                    100;
+
+                ProgressPanel.Visibility =
+                    Visibility.Visible;
+
+                StatusLbl.Text =
+                    "File encrypted successfully.";
+
+                FileStatusLbl.Text =
+                    "File encrypted successfully.";
+
+                FileStatusLbl.Foreground =
+                    Brushes.LimeGreen;
+
+                MessageBox.Show(
+                    "File encrypted successfully.\n\n" +
+                    "Click Save to export it.",
+                    "Success",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            else
             {
                 throw new CryptographicException(
                     "Encryption returned no result.");
             }
-
-            if (string.IsNullOrWhiteSpace(
-                    result.OutputPath))
-            {
-                throw new CryptographicException(
-                    "Encryption did not produce an output file.");
-            }
-
-            if (!File.Exists(
-                    result.OutputPath))
-            {
-                throw new FileNotFoundException(
-                    "Encrypted output file was not created.",
-                    result.OutputPath);
-            }
-
-            _currentResult =
-                result;
-
-            FileVars.IsEncrypted =
-                true;
-
-            FileVars.IsDecrypted =
-                false;
-
-            ProgressBar.Value =
-                100;
-
-            ProgressPanel.Visibility =
-                Visibility.Visible;
-
-            StatusLbl.Text =
-                "File encrypted successfully.";
-
-            FileStatusLbl.Text =
-                "File encrypted successfully.";
-
-            FileStatusLbl.Foreground =
-                Brushes.LimeGreen;
-
-            MessageBox.Show(
-                "File encrypted successfully.\n\n" +
-                "Click Save to export it.",
-                "Success",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
         }
         finally
         {
@@ -619,70 +621,72 @@ public partial class FileEncryptionPage :
                         cancellationToken:
                             _operationCts.Token);
 
-            if (result == null)
+            if (result != null)
+            {
+                if (string.IsNullOrWhiteSpace(
+                        result.OutputPath))
+                {
+                    throw new CryptographicException(
+                        "The decryption service returned an invalid output path.");
+                }
+
+                if (!File.Exists(
+                        result.OutputPath))
+                {
+                    throw new FileNotFoundException(
+                        "The decrypted output file could not be found.",
+                        result.OutputPath);
+                }
+
+                var outputInfo =
+                    new FileInfo(
+                        result.OutputPath);
+
+                if (outputInfo.Length <= 0)
+                {
+                    throw new InvalidDataException(
+                        "The decrypted output file is empty.");
+                }
+
+                _currentResult =
+                    result;
+
+                FileVars.IsEncrypted =
+                    false;
+
+                FileVars.IsDecrypted =
+                    true;
+
+                FileVars.OriginalExtension =
+                    result.SuggestedExtension;
+
+                ProgressBar.Value =
+                    100;
+
+                StatusDot.Fill =
+                    Brushes.LimeGreen;
+
+                StatusLbl.Text =
+                    "Decryption complete.";
+
+                FileStatusLbl.Text =
+                    "File decrypted successfully.";
+
+                FileStatusLbl.Foreground =
+                    Brushes.LimeGreen;
+
+                MessageBox.Show(
+                    "File decrypted successfully.\n\n" +
+                    "Click Save to export it.",
+                    "Decryption Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            else
             {
                 throw new CryptographicException(
                     "The decryption service returned no result.");
             }
-
-            if (string.IsNullOrWhiteSpace(
-                    result.OutputPath))
-            {
-                throw new CryptographicException(
-                    "The decryption service returned an invalid output path.");
-            }
-
-            if (!File.Exists(
-                    result.OutputPath))
-            {
-                throw new FileNotFoundException(
-                    "The decrypted output file could not be found.",
-                    result.OutputPath);
-            }
-
-            var outputInfo =
-                new FileInfo(
-                    result.OutputPath);
-
-            if (outputInfo.Length <= 0)
-            {
-                throw new InvalidDataException(
-                    "The decrypted output file is empty.");
-            }
-
-            _currentResult =
-                result;
-
-            FileVars.IsEncrypted =
-                false;
-
-            FileVars.IsDecrypted =
-                true;
-
-            FileVars.OriginalExtension =
-                result.SuggestedExtension;
-
-            ProgressBar.Value =
-                100;
-
-            StatusDot.Fill =
-                Brushes.LimeGreen;
-
-            StatusLbl.Text =
-                "Decryption complete.";
-
-            FileStatusLbl.Text =
-                "File decrypted successfully.";
-
-            FileStatusLbl.Foreground =
-                Brushes.LimeGreen;
-
-            MessageBox.Show(
-                "File decrypted successfully.\n\n" +
-                "Click Save to export it.",
-                "Decryption Complete",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
         }
         finally
         {
@@ -920,13 +924,13 @@ public partial class FileEncryptionPage :
         long bytes)
     {
         string[] sizes =
-        {
+        [
             "B",
             "KB",
             "MB",
             "GB",
             "TB"
-        };
+        ];
 
         double len =
             bytes;
@@ -1007,21 +1011,21 @@ public partial class FileEncryptionPage :
 // FILE STATE
 // =============================================================
 
-public static class FileVars
+internal static class FileVars
 {
-    public static string LoadedFile =
+    internal static string LoadedFile =
         string.Empty;
 
-    public static string FileExtension =
+    internal static string FileExtension =
         string.Empty;
 
-    public static bool IsEncrypted;
+    internal static bool IsEncrypted;
 
-    public static bool IsDecrypted;
+    internal static bool IsDecrypted;
 
-    public static bool FileOpened { get; set; }
+    internal static bool FileOpened { get; set; }
 
-    public static long FileSize { get; set; }
+    internal static long FileSize { get; set; }
 
-    public static string? OriginalExtension { get; set; }
+    internal static string? OriginalExtension { get; set; }
 }
