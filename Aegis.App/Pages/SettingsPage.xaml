@@ -334,7 +334,7 @@
                                     Style="{StaticResource DarkIntegerUpDownStyle}"
                                     Value="1"
                                     Minimum="1"
-                                    Maximum="64"
+                                    Maximum="256"
                                     Increment="1"
                                     ValueChanged="Argon2IterationsUpDown_ValueChanged"/>
 

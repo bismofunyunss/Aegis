@@ -1,12 +1,14 @@
-﻿using System.Buffers.Binary;
+﻿using Aegis.App.Crypto;
+using Aegis.Contracts;
+using Aegis.Contracts.IPC;
+using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Aegis.App.Crypto;
-using Aegis.Contracts;
 
 namespace Aegis.App.Ipc;
 
@@ -14,6 +16,9 @@ public sealed class IpcClient : IDisposable
 {
     private const string PipeName =
         "AegisVaultPipe";
+
+    private const string BootstrapLogUsername =
+        "bootstrap";
 
     private const int LengthPrefixSize =
         sizeof(int);
@@ -85,6 +90,7 @@ public sealed class IpcClient : IDisposable
             IpcResponse response =
                 await SendBootstrapAsync(
                     request,
+                    username,
                     cancellationToken);
 
             return DeserializeSuccess<TotpEnrollment>(
@@ -142,6 +148,7 @@ public sealed class IpcClient : IDisposable
             IpcResponse response =
                 await SendBootstrapAsync(
                     request,
+                    username,
                     cancellationToken);
 
             if (!response.Success)
@@ -162,12 +169,26 @@ public sealed class IpcClient : IDisposable
     // =========================================================
     // CONFIRM LOGIN TOTP
     // =========================================================
+    //
+    // Username is explicitly supplied.
+    //
+    // DO NOT use:
+    //
+    // ClientSessionManager.Current.Username
+    //
+    // This happens before authentication is established and
+    // Current could still contain the previous account.
+    //
 
     public static async Task<ClientSession?> ConfirmLoginTotpAsync(
+        string username,
         string authenticationId,
         string code,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            username);
+
         ArgumentException.ThrowIfNullOrWhiteSpace(
             authenticationId);
 
@@ -212,6 +233,7 @@ public sealed class IpcClient : IDisposable
             IpcResponse response =
                 await SendBootstrapAsync(
                     request,
+                    username,
                     cancellationToken);
 
             if (!response.Success)
@@ -263,7 +285,6 @@ public sealed class IpcClient : IDisposable
         finally
         {
             Zero(payload);
-
             Zero(exportedSessionKey);
         }
     }
@@ -273,10 +294,14 @@ public sealed class IpcClient : IDisposable
     // =========================================================
 
     public static async Task ConfirmTotpEnrollmentAsync(
-        string code,
+        string username,
         string enrollmentId,
+        string code,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            username);
+
         ArgumentException.ThrowIfNullOrWhiteSpace(
             enrollmentId);
 
@@ -290,11 +315,11 @@ public sealed class IpcClient : IDisposable
             var body =
                 new ConfirmTotpEnrollmentRequest
                 {
-                    Code =
-                        code,
-
                     EnrollmentId =
-                        enrollmentId
+                        enrollmentId,
+
+                    Code =
+                        code
                 };
 
             payload =
@@ -320,6 +345,7 @@ public sealed class IpcClient : IDisposable
             IpcResponse response =
                 await SendBootstrapAsync(
                     request,
+                    username,
                     cancellationToken);
 
             ThrowIfFailed(
@@ -556,7 +582,6 @@ public sealed class IpcClient : IDisposable
         }
         finally
         {
-            // Local session destruction is unconditional.
             ClientSessionManager.Clear();
         }
     }
@@ -567,6 +592,7 @@ public sealed class IpcClient : IDisposable
 
     private static async Task<IpcResponse> SendBootstrapAsync(
         IpcRequest request,
+        string? logUsername,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(
@@ -575,40 +601,166 @@ public sealed class IpcClient : IDisposable
         byte[]? requestBytes = null;
         byte[]? responseBytes = null;
 
+        // ---------------------------------------------------------
+        // Normalize exactly once.
+        //
+        // No null/empty username ever reaches FileLogger.
+        //
+        // IMPORTANT:
+        // We deliberately do NOT fall back to
+        // ClientSessionManager.Current.Username.
+        // ---------------------------------------------------------
+
+        string logIdentity =
+            NormalizeLogUsername(
+                logUsername);
+
         try
         {
+            FileLogger.ClientLog(
+                $"CLIENT: SendBootstrapAsync START " +
+                $"Command={request.Command}",
+                logIdentity);
+
+            // ---------------------------------------------------------
+            // Serialize request
+            // ---------------------------------------------------------
+
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap serializing request...",
+                logIdentity);
+
             requestBytes =
                 JsonSerializer.SerializeToUtf8Bytes(
                     request);
 
+            FileLogger.ClientLog(
+                $"CLIENT: bootstrap request serialized. " +
+                $"Length={requestBytes.Length}",
+                logIdentity);
+
             ValidateMessageSize(
                 requestBytes.Length);
+
+            // ---------------------------------------------------------
+            // Connect
+            // ---------------------------------------------------------
 
             await using NamedPipeClientStream client =
                 CreateClient();
 
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap connecting to pipe...",
+                logIdentity);
+
             await ConnectAsync(
                 client,
                 cancellationToken);
+
+            FileLogger.ClientLog(
+                $"CLIENT: bootstrap pipe connected. " +
+                $"Connected={client.IsConnected}",
+                logIdentity);
+
+            // ---------------------------------------------------------
+            // Send request
+            // ---------------------------------------------------------
+
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap writing request...",
+                logIdentity);
 
             await WriteMessageAsync(
                 client,
                 requestBytes,
                 cancellationToken);
 
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap request written.",
+                logIdentity);
+
+            // ---------------------------------------------------------
+            // Read response
+            // ---------------------------------------------------------
+
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap waiting for response...",
+                logIdentity);
+
             responseBytes =
                 await ReadMessageAsync(
                     client,
                     cancellationToken);
 
-            return DeserializeResponse(
-                responseBytes);
+            FileLogger.ClientLog(
+                $"CLIENT: bootstrap response received. " +
+                $"Length={responseBytes.Length}",
+                logIdentity);
+
+            // ---------------------------------------------------------
+            // Deserialize response
+            // ---------------------------------------------------------
+
+            FileLogger.ClientLog(
+                "CLIENT: bootstrap deserializing response...",
+                logIdentity);
+
+            IpcResponse response =
+                DeserializeResponse(
+                    responseBytes);
+
+            FileLogger.ClientLog(
+                $"CLIENT: bootstrap response deserialized. " +
+                $"Success={response.Success}, " +
+                $"ErrorCode={response.ErrorCode}",
+                logIdentity);
+
+            FileLogger.ClientLog(
+                "CLIENT: SendBootstrapAsync COMPLETE.",
+                logIdentity);
+
+            return response;
+        }
+        catch (OperationCanceledException ex)
+        {
+            FileLogger.Log(
+                ex,
+                "IpcClient bootstrap operation cancelled.",
+                logIdentity);
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Log(
+                ex,
+                $"IpcClient bootstrap failed. " +
+                $"Command={request.Command}",
+                logIdentity);
+
+            throw;
         }
         finally
         {
             Zero(requestBytes);
             Zero(responseBytes);
         }
+    }
+
+    // =========================================================
+    // LOGGING IDENTITY
+    // =========================================================
+
+    private static string NormalizeLogUsername(
+        string? username)
+    {
+        if (string.IsNullOrWhiteSpace(
+                username))
+        {
+            return BootstrapLogUsername;
+        }
+
+        return username.Trim();
     }
 
     // =========================================================
@@ -655,15 +807,34 @@ public sealed class IpcClient : IDisposable
 
             try
             {
+                Debug.WriteLine(
+                    $"CLIENT: SendAsync START " +
+                    $"Command={request.Command}, " +
+                    $"Counter={counter}");
+
+                Debug.WriteLine(
+                    "CLIENT: serializing request...");
+
                 plaintext =
                     JsonSerializer.SerializeToUtf8Bytes(
                         request);
 
+                Debug.WriteLine(
+                    $"CLIENT: request serialized. " +
+                    $"Length={plaintext.Length}");
+
                 ValidateMessageSize(
                     plaintext.Length);
 
+                Debug.WriteLine(
+                    "CLIENT: exporting session key...");
+
                 sessionKey =
                     session.SessionKey.Export();
+
+                Debug.WriteLine(
+                    $"CLIENT: session key exported. " +
+                    $"Length={sessionKey.Length}");
 
                 if (sessionKey.Length !=
                     IpcProtocol.SessionKeySize)
@@ -671,6 +842,9 @@ public sealed class IpcClient : IDisposable
                     throw new SecurityException(
                         "Invalid session key.");
                 }
+
+                Debug.WriteLine(
+                    "CLIENT: encrypting request...");
 
                 SecureEnvelope envelope =
                     VaultTransport.EncryptOutgoing(
@@ -680,9 +854,19 @@ public sealed class IpcClient : IDisposable
                         counter,
                         request.Command);
 
+                Debug.WriteLine(
+                    "CLIENT: request encrypted.");
+
+                Debug.WriteLine(
+                    "CLIENT: serializing request envelope...");
+
                 envelopeBytes =
                     JsonSerializer.SerializeToUtf8Bytes(
                         envelope);
+
+                Debug.WriteLine(
+                    $"CLIENT: request envelope serialized. " +
+                    $"Length={envelopeBytes.Length}");
 
                 ValidateMessageSize(
                     envelopeBytes.Length);
@@ -690,23 +874,52 @@ public sealed class IpcClient : IDisposable
                 await using NamedPipeClientStream client =
                     CreateClient();
 
+                Debug.WriteLine(
+                    "CLIENT: connecting to pipe...");
+
                 await ConnectAsync(
                     client,
                     cancellationToken);
+
+                Debug.WriteLine(
+                    $"CLIENT: pipe connected. " +
+                    $"Connected={client.IsConnected}");
+
+                Debug.WriteLine(
+                    "CLIENT: writing request...");
 
                 await WriteMessageAsync(
                     client,
                     envelopeBytes,
                     cancellationToken);
 
+                Debug.WriteLine(
+                    "CLIENT: request written successfully.");
+
+                Debug.WriteLine(
+                    "CLIENT: waiting for response...");
+
                 responseBytes =
                     await ReadMessageAsync(
                         client,
                         cancellationToken);
 
+                Debug.WriteLine(
+                    $"CLIENT: response received successfully. " +
+                    $"Length={responseBytes.Length}");
+
+                Debug.WriteLine(
+                    "CLIENT: deserializing response envelope...");
+
                 SecureEnvelope responseEnvelope =
                     DeserializeEnvelope(
                         responseBytes);
+
+                Debug.WriteLine(
+                    "CLIENT: response envelope deserialized.");
+
+                Debug.WriteLine(
+                    "CLIENT: decrypting response...");
 
                 decrypted =
                     VaultTransport.DecryptResponse(
@@ -716,8 +929,40 @@ public sealed class IpcClient : IDisposable
                         counter,
                         request.Command);
 
-                return DeserializeResponse(
-                    decrypted);
+                Debug.WriteLine(
+                    $"CLIENT: response decrypted successfully. " +
+                    $"Length={decrypted.Length}");
+
+                Debug.WriteLine(
+                    "CLIENT: deserializing IpcResponse...");
+
+                IpcResponse response =
+                    DeserializeResponse(
+                        decrypted);
+
+                Debug.WriteLine(
+                    $"CLIENT: IpcResponse deserialized. " +
+                    $"Success={response.Success}, " +
+                    $"ErrorCode={response.ErrorCode}");
+
+                Debug.WriteLine(
+                    "CLIENT: SendAsync COMPLETE.");
+
+                return response;
+            }
+            catch (OperationCanceledException ex)
+            {
+                Debug.WriteLine(
+                    $"CLIENT: SendAsync CANCELED: {ex}");
+
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"CLIENT: SendAsync FAILED: {ex}");
+
+                throw;
             }
             finally
             {
@@ -1071,7 +1316,7 @@ public sealed class IpcClient : IDisposable
             return;
 
         string message =
-            GetSafeErrorMessage(
+            IpcErrorMessages.Get(
                 response.ErrorCode);
 
         if (string.IsNullOrWhiteSpace(message))
@@ -1097,14 +1342,48 @@ public sealed class IpcClient : IDisposable
             IpcErrorCode.FileFailure =>
                 new IOException(message),
 
+            IpcErrorCode.FileAlreadyEncrypted =>
+                new IpcException(
+                    IpcErrorCode.FileAlreadyEncrypted,
+                    message),
+
+            IpcErrorCode.FileNotEncrypted =>
+                new IpcException(
+                    IpcErrorCode.FileNotEncrypted,
+                    message),
+
+            IpcErrorCode.FileNotFound =>
+                new IpcException(
+                    IpcErrorCode.FileNotFound,
+                    message),
+
+            IpcErrorCode.InvalidFileFormat =>
+                new IpcException(
+                    IpcErrorCode.InvalidFileFormat,
+                    message),
+
+            IpcErrorCode.UnsupportedFileVersion =>
+                new IpcException(
+                    IpcErrorCode.UnsupportedFileVersion,
+                    message),
+
+            IpcErrorCode.FileIntegrityFailure =>
+                new IpcException(
+                    IpcErrorCode.FileIntegrityFailure,
+                    message),
+
+            IpcErrorCode.SessionExpired =>
+                new IpcException(
+                    IpcErrorCode.SessionExpired,
+                    message),
+
             IpcErrorCode.Cancelled =>
                 new OperationCanceledException(message),
 
-            IpcErrorCode.SessionExpired =>
-                new SecurityException(message),
-
             IpcErrorCode.InternalFailure =>
-                new InvalidOperationException(message),
+                new IpcException(
+                    IpcErrorCode.InternalFailure,
+                    message),
 
             _ =>
                 new IpcException(
@@ -1135,6 +1414,24 @@ public sealed class IpcClient : IDisposable
 
             IpcErrorCode.FileFailure =>
                 "The file operation could not be completed.",
+
+            IpcErrorCode.FileAlreadyEncrypted =>
+                "The selected file is already encrypted.",
+
+            IpcErrorCode.FileNotEncrypted =>
+                "The selected file is not encrypted.",
+
+            IpcErrorCode.FileNotFound =>
+                "The selected file could not be found.",
+
+            IpcErrorCode.InvalidFileFormat =>
+                "The selected file is not a valid Aegis file.",
+
+            IpcErrorCode.UnsupportedFileVersion =>
+                "The selected file uses an unsupported file version.",
+
+            IpcErrorCode.FileIntegrityFailure =>
+                "The file failed its integrity check.",
 
             IpcErrorCode.Cancelled =>
                 "The operation was cancelled.",

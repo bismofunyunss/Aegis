@@ -1,7 +1,6 @@
 ﻿<Application x:Class="Aegis.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:converters="clr-namespace:Aegis.App.Converters"
              xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
               StartupUri="MainWindow.xaml">
 

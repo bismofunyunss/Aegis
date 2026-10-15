@@ -10,8 +10,8 @@ internal static class VaultTransport
 {
     private const int AesKeySize = 32;
 
-    private const string AeadDomain =
-        "Aegis-IPC-v1";
+    private static ReadOnlySpan<byte> DirectionalKeyDomain =>
+        "Aegis.IPC.v1"u8;
 
     // =========================================================
     // ENCRYPT OUTGOING
@@ -213,8 +213,7 @@ internal static class VaultTransport
         string info)
     {
         byte[] domain =
-            Encoding.UTF8.GetBytes(
-                AeadDomain);
+            DirectionalKeyDomain.ToArray();
 
         byte[] infoBytes =
             Encoding.UTF8.GetBytes(

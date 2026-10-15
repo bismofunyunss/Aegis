@@ -10,8 +10,6 @@ namespace Aegis.App.Core
     public sealed class VaultClientService
     {
         private readonly IpcClient _ipc;
-        private AegisSettingsStore? _settingsStore;
-        private AegisSettings? _settings;
 
         public VaultClientService(IpcClient ipc)
         {
@@ -25,11 +23,16 @@ namespace Aegis.App.Core
         // =========================================================
 
         public static async Task ConfirmTotpEnrollmentAsync(
+            string username,
             string enrollmentId,
             string code)
         {
+            ValidateUsername(username);
+
             await IpcClient.ConfirmTotpEnrollmentAsync(
-                code, enrollmentId);
+                username,
+                enrollmentId,
+                code);
         }
 
         // =========================================================
@@ -60,6 +63,16 @@ namespace Aegis.App.Core
             ValidateRegistrationSettings(
                 settings);
 
+            FileLogger.ClientLog(
+                $"REGISTER SETTINGS: " +
+                $"PBKDF2={settings.Pbkdf2Iterations}, " +
+                $"ArgonIterations={settings.Argon2Iterations}, " +
+                $"ArgonMemoryMiB={settings.Argon2MemoryMiB}, " +
+                $"ArgonParallelism={settings.Argon2Parallelism}, " +
+                $"Fips={settings.Fips}, " +
+                $"KdfTargetMs={settings.KdfTargetMilliseconds}",
+                username);
+
             var cryptoSettings =
                 new CryptoSettings
                 {
@@ -73,8 +86,18 @@ namespace Aegis.App.Core
                         settings.Argon2Parallelism,
 
                     ArgonMemoryKb =
-                        settings.Argon2MemoryMiB
+                        checked(
+                            settings.Argon2MemoryMiB *
+                            1024)
                 };
+
+            FileLogger.ClientLog(
+                $"REGISTER CRYPTO SETTINGS: " +
+                $"PBKDF2={cryptoSettings.Pbkdf2Iterations}, " +
+                $"ArgonIterations={cryptoSettings.ArgonIterations}, " +
+                $"ArgonMemoryKb={cryptoSettings.ArgonMemoryKb}, " +
+                $"ArgonParallelism={cryptoSettings.ArgonParallelism}",
+                username);
 
             return await IpcClient.RegisterAsync(
                 username,
@@ -98,24 +121,25 @@ namespace Aegis.App.Core
                 password);
         }
 
+        // =========================================================
+        // LOGIN TOTP
+        // =========================================================
+
         public async Task<bool> ConfirmLoginTotpAsync(
-     string authenticationId,
-     string code)
+            string username,
+            string authenticationId,
+            string code)
         {
+            ValidateUsername(username);
+
             var session =
                 await IpcClient.ConfirmLoginTotpAsync(
+                    username,
                     authenticationId,
                     code);
 
             if (session == null)
                 return false;
-
-            _settingsStore =
-                new AegisSettingsStore(
-                    session.Username);
-
-            _settings =
-                _settingsStore.Load();
 
             return true;
         }
@@ -136,15 +160,18 @@ namespace Aegis.App.Core
         }
 
         // =========================================================
-        // FILE ENCRYPTION
+        // FILE DECRYPTION
         // =========================================================
 
         public async Task<FileOperationResult?> DecryptFile(
-            string inputPath, IProgress<double>? progress = null,
+            string inputPath,
+            IProgress<double>? progress = null,
             CancellationToken cancellationToken = default)
-        { 
+        {
             return await _ipc.DecryptFileAsync(
-                inputPath, null, cancellationToken);
+                inputPath,
+                null,
+                cancellationToken);
         }
 
         // =========================================================
@@ -165,6 +192,10 @@ namespace Aegis.App.Core
             }
         }
 
+        // =========================================================
+        // CHANGE PASSWORD
+        // =========================================================
+
         public async Task ChangePasswordAsync(
             byte[] currentPassword,
             byte[] newPassword)
@@ -176,14 +207,18 @@ namespace Aegis.App.Core
                 newPassword);
 
             if (currentPassword.Length == 0)
+            {
                 throw new ArgumentException(
                     "Current password is empty.",
                     nameof(currentPassword));
+            }
 
             if (newPassword.Length == 0)
+            {
                 throw new ArgumentException(
                     "New password is empty.",
                     nameof(newPassword));
+            }
 
             await _ipc.ChangePasswordAsync(
                 currentPassword,
@@ -194,25 +229,29 @@ namespace Aegis.App.Core
         // INTERNAL POLICY HELPERS
         // =========================================================
 
-        private CryptoSettings BuildCryptoSettings()
+        private static CryptoSettings BuildCryptoSettings(
+            AegisSettings settings)
         {
-            if (_settings == null)
-            {
-                throw new SecurityException(
-                    "Aegis settings have not been loaded.");
-            }
+            ArgumentNullException.ThrowIfNull(
+                settings);
+
+            ValidateRegistrationSettings(
+                settings);
 
             return new CryptoSettings
             {
+                Pbkdf2Iterations =
+                    settings.Pbkdf2Iterations,
+
                 ArgonIterations =
-                    _settings.Argon2Iterations,
+                    settings.Argon2Iterations,
 
                 ArgonParallelism =
-                    _settings.Argon2Parallelism,
+                    settings.Argon2Parallelism,
 
                 ArgonMemoryKb =
                     checked(
-                        _settings.Argon2MemoryMiB *
+                        settings.Argon2MemoryMiB *
                         1024)
             };
         }
@@ -236,7 +275,8 @@ namespace Aegis.App.Core
         private static void ValidatePcrs(
             uint[] pcrs)
         {
-            if (pcrs == null || pcrs.Length == 0)
+            if (pcrs == null ||
+                pcrs.Length == 0)
             {
                 throw new SecurityException(
                     "Invalid PCR set.");
@@ -261,6 +301,9 @@ namespace Aegis.App.Core
         private static void ValidateRegistrationSettings(
             AegisSettings settings)
         {
+            ArgumentNullException.ThrowIfNull(
+                settings);
+
             if (settings.Pbkdf2Iterations <
                 600_000)
             {

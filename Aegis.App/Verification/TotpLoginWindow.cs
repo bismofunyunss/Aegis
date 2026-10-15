@@ -9,21 +9,30 @@ namespace Aegis.App.Verification;
 
 internal partial class TotpLoginWindow : Window
 {
+    private readonly string _username;
     private readonly string _authenticationId;
 
-private bool _isVerifying;
+    private bool _isVerifying;
     private bool _completed;
 
-
     public TotpLoginWindow(
+        string username,
         string authenticationId)
     {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException(
+                "Username is required.",
+                nameof(username));
+
         if (string.IsNullOrWhiteSpace(authenticationId))
             throw new ArgumentException(
                 "Authentication ID is required.",
                 nameof(authenticationId));
 
         InitializeComponent();
+
+        _username =
+            username;
 
         _authenticationId =
             authenticationId;
@@ -168,6 +177,7 @@ private bool _isVerifying;
             bool success =
                 await AppServices.Core
                     .ConfirmLoginTotpAsync(
+                    _username,
                         _authenticationId,
                         code);
 

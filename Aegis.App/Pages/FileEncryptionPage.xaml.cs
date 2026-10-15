@@ -1,18 +1,16 @@
-﻿using System.IO;
+﻿using Aegis.App.Core;
+using Aegis.App.Crypto;
+using Aegis.App.Ipc;
+using Aegis.Client.Services;
+using Aegis.Contracts;
+using Microsoft.Win32;
+using System.IO;
 using System.Security;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-
-using Aegis.App.Core;
-using Aegis.App.Crypto;
-using Aegis.App.Ipc;
-using Aegis.Contracts;
-
-using Microsoft.Win32;
-
 using Path = System.IO.Path;
 
 namespace Aegis.App.Pages;
@@ -244,8 +242,8 @@ public partial class FileEncryptionPage :
     // =========================================================
 
     private async void EncryptFileButton_Click(
-        object sender,
-        RoutedEventArgs e)
+       object sender,
+       RoutedEventArgs e)
     {
         if (!ClientSessionManager.IsAuthenticated)
             return;
@@ -256,11 +254,10 @@ public partial class FileEncryptionPage :
         }
         catch (OperationCanceledException)
         {
-            StatusDot.Fill =
-                Brushes.Orange;
+            StopCryptoStatus();
 
-            StatusLbl.Text =
-                "Encryption cancelled.";
+            StatusDot.Fill = Brushes.Orange;
+            StatusLbl.Text = "Encryption cancelled.";
 
             FileStatusLbl.Text =
                 "Encryption was cancelled.";
@@ -268,59 +265,47 @@ public partial class FileEncryptionPage :
             FileStatusLbl.Foreground =
                 Brushes.Orange;
         }
+        catch (IpcException ex)
+        {
+            StopCryptoStatus();
+
+            StatusDot.Fill = Brushes.Red;
+            StatusLbl.Text = "Encryption failed.";
+
+            FileVars.IsEncrypted = false;
+
+            IpcErrorHandler.Show(ex);
+        }
         catch (CryptographicException ex)
         {
             StopCryptoStatus();
 
-            StatusDot.Fill =
-                Brushes.Red;
+            StatusDot.Fill = Brushes.Red;
+            StatusLbl.Text = "Encryption failed.";
 
-            StatusLbl.Text =
-                "Encryption failed.";
+            FileVars.IsEncrypted = false;
 
-            FileVars.IsEncrypted =
-                false;
-
-            MessageBox.Show(
-                ex.Message,
-                "Encryption Failed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            IpcErrorHandler.Show(ex);
         }
         catch (SecurityException ex)
         {
             StopCryptoStatus();
 
-            StatusDot.Fill =
-                Brushes.Red;
+            StatusDot.Fill = Brushes.Red;
+            StatusLbl.Text = "Security error.";
 
-            StatusLbl.Text =
-                "Security error.";
-
-            MessageBox.Show(
-                ex.Message,
-                "Encryption Failed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            IpcErrorHandler.Show(ex);
         }
         catch (Exception ex)
         {
             StopCryptoStatus();
 
-            StatusDot.Fill =
-                Brushes.Red;
+            StatusDot.Fill = Brushes.Red;
+            StatusLbl.Text = "Encryption failed.";
 
-            StatusLbl.Text =
-                "Encryption failed.";
+            FileVars.IsEncrypted = false;
 
-            FileVars.IsEncrypted =
-                false;
-
-            MessageBox.Show(
-                ex.Message,
-                "Encryption Failed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            IpcErrorHandler.Show(ex);
         }
     }
 
@@ -403,10 +388,7 @@ public partial class FileEncryptionPage :
                 StatusLbl.Text =
                     "File encrypted successfully.";
 
-                FileStatusLbl.Text =
-                    "File encrypted successfully.";
-
-                FileStatusLbl.Foreground =
+                StatusLbl.Foreground =
                     Brushes.LimeGreen;
 
                 MessageBox.Show(

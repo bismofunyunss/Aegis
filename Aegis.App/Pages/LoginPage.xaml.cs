@@ -247,6 +247,9 @@ public partial class LoginPage : Page, IWindowResizablePage
         _username =
             UsernameBox.Text.Trim();
 
+        if (string.IsNullOrEmpty(_username) || passwordBytes.Length == 0)
+            return;
+
         bool result = false;
 
         try
@@ -360,6 +363,7 @@ public partial class LoginPage : Page, IWindowResizablePage
 
         var totpWindow =
             new TotpLoginWindow(
+                username,
                 authenticationId);
 
         var totpResult =
@@ -479,7 +483,7 @@ public partial class LoginPage : Page, IWindowResizablePage
                 true;
 
             LogoutButton.IsEnabled =
-                false;
+                true;
 
             UsernameBox.IsEnabled =
                 true;

@@ -7,65 +7,95 @@ namespace Aegis.App
 {
     internal class FileLogger
     {
-            private static readonly object LockObject = new();
+        private static readonly object LockObject = new();
 
-            public static void Log(
-                Exception ex,
-                string context, string username)
+        public static void Log(
+            Exception ex,
+            string context, string username)
+        {
+            try
             {
-                try
+                var folder =
+                    Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "Aegis",
+                        "Users",
+                        username);
+
+                Directory.CreateDirectory(folder);
+
+                var path =
+                    Path.Combine(
+                        folder,
+                        "ExceptionLog.txt");
+
+                lock (LockObject)
                 {
-                    var folder =
-                        Path.Combine(
-                            Environment.GetFolderPath(
-                                Environment.SpecialFolder.LocalApplicationData),
-                            "Aegis",
-                            "Users",
-                            username);
+                    using var writer =
+                        new StreamWriter(
+                            path,
+                            append: true);
 
-                    Directory.CreateDirectory(folder);
+                    writer.WriteLine(
+                        "====================================================");
 
-                    var path =
-                        Path.Combine(
-                            folder,
-                            "ExceptionLog.txt");
+                    writer.WriteLine(
+                        $"UTC Time : {DateTime.UtcNow:O}");
 
-                    lock (LockObject)
-                    {
-                        using var writer =
-                            new StreamWriter(
-                                path,
-                                append: true);
+                    writer.WriteLine(
+                        $"Context  : {context}");
 
-                        writer.WriteLine(
-                            "====================================================");
+                    writer.WriteLine(
+                        $"Type     : {ex.GetType().FullName}");
 
-                        writer.WriteLine(
-                            $"UTC Time : {DateTime.UtcNow:O}");
+                    writer.WriteLine(
+                        $"Message  : {ex.Message}");
 
-                        writer.WriteLine(
-                            $"Context  : {context}");
+                    writer.WriteLine();
 
-                        writer.WriteLine(
-                            $"Type     : {ex.GetType().FullName}");
+                    writer.WriteLine(
+                        ex.ToString());
 
-                        writer.WriteLine(
-                            $"Message  : {ex.Message}");
-
-                        writer.WriteLine();
-
-                        writer.WriteLine(
-                            ex.ToString());
-
-                        writer.WriteLine();
-                    }
+                    writer.WriteLine();
                 }
-                catch
-                {
-                    //
-                    // Never allow logging to crash encryption.
-                    //
-                }
+            }
+            catch
+            {
+                //
+                // Never allow logging to crash encryption.
+                //
+            }
+        }
+
+        public static void ClientLog(string message, string username)
+        {
+            try
+            {
+                var folder =
+    Path.Combine(
+        Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData),
+        "Aegis",
+        "Users",
+        username);
+
+                Directory.CreateDirectory(folder);
+
+                var path =
+                    Path.Combine(
+                        folder,
+                        "ExceptionLog.txt");
+
+                File.AppendAllText(
+         path,
+          $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+
+            }
+            catch
+            {
+                // Never allow diagnostic logging to break IPC.
             }
         }
     }
+}

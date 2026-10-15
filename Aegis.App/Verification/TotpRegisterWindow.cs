@@ -11,12 +11,22 @@ namespace Aegis.App.Verification;
 
 public partial class TotpRegisterWindow : Window
 {
+    private readonly string _username;
     private readonly TotpEnrollment _enrollment;
 
     public TotpRegisterWindow(
+        string username,
         TotpEnrollment enrollment)
     {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException(
+                "Username is required.",
+                nameof(username));
+
         InitializeComponent();
+
+        _username =
+            username;
 
         _enrollment =
             enrollment ??
@@ -75,6 +85,7 @@ public partial class TotpRegisterWindow : Window
                 Visibility.Visible;
 
             await Core.VaultClientService.ConfirmTotpEnrollmentAsync(
+                _username,
                     _enrollment.EnrollmentId,
                     code);
 

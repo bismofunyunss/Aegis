@@ -244,6 +244,7 @@ public partial class RegisterPage :
 
             var totpWindow =
                 new TotpRegisterWindow(
+                    username,
                     enrollment);
 
             bool? totpResult =
